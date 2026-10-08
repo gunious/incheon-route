@@ -68,14 +68,21 @@
   #gpsInfo { position: fixed; z-index: 1000; left: 50%; transform: translateX(-50%); bottom: 26px; background: rgba(10,61,98,.92); color: #fff; padding: 6px 10px; border-radius: 18px; font-size: 13px; display: none; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
   #gpsInfo .x { color: #fff; background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.4); margin-left: 4px; }
   .boat svg { transition: transform .4s; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
-  #sideClose, #menuBtn { display: none; }
+  #sideClose, #menuBtn, #sheetBar { display: none; }
   /* 핸드폰: 지도를 꽉 채우고, 메뉴는 버튼으로 여닫음 */
   @media (max-width: 700px) {
     body { display: block; }
     #map { position: fixed; inset: 0; }
-    #side { position: fixed; z-index: 1500; left: 0; right: 0; bottom: 0; width: 100%; height: 70%; border-radius: 12px 12px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,.35); transform: translateY(105%); transition: transform .2s; }
+    /* 메뉴: 거의 전체 화면, 안쪽 작은 칸 대신 메뉴 전체가 한 번에 위아래로 굴러감 */
+    #side { position: fixed; z-index: 1500; left: 0; right: 0; bottom: 0; width: 100%; height: 94%; display: block; overflow-y: auto; -webkit-overflow-scrolling: touch;
+            border-radius: 12px 12px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,.35); transform: translateY(105%); transition: transform .2s; }
     #side.open { transform: none; }
-    #sideClose { display: inline-block; }
+    #side .scroll { overflow: visible; flex: none; }
+    #sheetBar { display: flex; position: sticky; top: 0; z-index: 5; justify-content: space-between; align-items: center; padding: 8px 12px; background: #0a3d62; color: #fff; font-weight: bold; }
+    #sheetBar button { background: #fff; color: #0a3d62; border: 0; font-weight: bold; padding: 6px 14px; border-radius: 16px; }
+    #selBar { position: sticky; bottom: 0; }
+    .row { padding: 7px 0; }
+    #res, #routes, #trails { font-size: 14px; }
     #menuBtn { display: block; position: fixed; z-index: 1000; left: 10px; bottom: 26px; padding: 9px 14px; font-size: 15px; border-radius: 22px; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
     #empty { left: 0; }
     #tideBox { left: 50%; top: 6px; min-width: 0; width: calc(100% - 110px); padding: 4px 8px; font-size: 11px; }
@@ -92,8 +99,9 @@
 </head>
 <body>
 <div id="side">
+  <div id="sheetBar"><span id="sheetTitle">메뉴</span><button id="sheetClose">✕ 닫기</button></div>
   <div class="sec">
-    <h2>서해 인천권 항로 <span><small id="saved"></small> <button class="x" id="sideClose" title="메뉴 닫기">✕</button></span></h2>
+    <h2><span id="appTitle">서해 인천권 항로</span> <span><small id="saved"></small> <button class="x" id="sideClose" title="메뉴 닫기">✕</button></span></h2>
     <details id="setBox" style="margin-bottom:4px"><summary class="stat" style="cursor:pointer">설정 (물때 인증키)</summary>
       <div class="stat" style="margin-top:4px">공공데이터포털 일반 인증키(Decoding). 이 기기에만 저장되고 어디에도 올라가지 않습니다.</div>
       <div style="display:flex;gap:4px;margin-top:4px"><input id="keyIn" type="password" placeholder="인증키 붙여넣기" style="flex:1;font:inherit;padding:3px 5px">
@@ -123,6 +131,17 @@
     </div>
   </div>
   <div class="scroll">
+    <div class="sec" id="myTrkSec">
+      <h2>내 항적 (GPS 기록) <small id="myTrkInfo"></small></h2>
+      <div class="stat">📍 GPS를 켜 두면 지나간 길이 빨간 선으로 기록됩니다. 창을 닫아도 남아 있습니다.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center">
+        <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="myTrkRec" checked> 기록</label>
+        <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="myTrkShow" checked> 지도에 보기</label>
+        <button class="x" id="myTrkFit">보기</button>
+        <button class="x pri" id="myTrkSave">GPX로 저장</button>
+        <button class="x dan" id="myTrkDel">지우기</button>
+      </div>
+    </div>
     <div class="sec">
       <h2>항로 목록 <small>체크한 항로만 지도에 표시 (저장은 전부)</small></h2>
       <div class="row" id="rtHead" style="border-bottom:1px solid var(--line);font-weight:bold">
@@ -159,7 +178,7 @@
       </div>
       <div class="stat" id="dupInfo" style="color:#c62828"></div>
       <label style="display:block;margin:4px 0"><input type="checkbox" id="lblOn" checked> 지도에 포인트 이름 표시 <span class="stat" id="lblInfo"></span></label>
-      <input id="q" placeholder="이름 검색 (예: GGIJ1990, Port) · 비우면 지금 화면 안의 포인트">
+      <input id="q" placeholder="이름 검색 (예: Port, Rock) · 비우면 지금 화면 안의 포인트">
       <div id="res"></div>
     </div>
   </div>
@@ -385,20 +404,36 @@ const chartLayers = {}, overlays = {'해도 표지(OpenSeaMap)': sea};
 window.__t0 = performance.now();
 const DEP = window.DEPTH_DATA && window.DEPTH_DATA.b64 ? window.DEPTH_DATA : null;
 const DEPTH_BANDS = [[0, '#d6c08f'], [2, '#e6fbff'], [5, '#b9f0f7'], [10, '#7fdcec'], [20, '#45c3dd'], [30, '#1fa5c9'], [50, '#0b84b0'], [100, '#08628f'], [200, '#06446b'], [1e9, '#042a45']];
-let depthGrid = null, fineGrid = null;
-const FINE = window.DEPTH_FINE && window.DEPTH_FINE.b64 ? window.DEPTH_FINE : null;
-if (FINE) { const r = atob(FINE.b64), u = new Uint8Array(r.length); for (let k = 0; k < r.length; k++) u[k] = r.charCodeAt(k); fineGrid = new Uint16Array(u.buffer); }
-function fineAt(la, lo) { // 국립해양조사원 150m 격자 (0.1m 단위)
-  if (!fineGrid || la >= FINE.north || la <= FINE.south || lo <= FINE.west || lo >= FINE.east) return null;
-  const fy = (FINE.north - la) * FINE.res - 0.5, fx = (lo - FINE.west) * FINE.res - 0.5, y0 = Math.floor(fy), x0 = Math.floor(fx);
-  let s = 0, w = 0;
-  for (const [dy, dx] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
-    const y = y0 + dy, x = x0 + dx; if (y < 0 || x < 0 || y >= FINE.ny || x >= FINE.nx) continue;
-    const v = fineGrid[y * FINE.nx + x]; if (!v) continue;
-    const k = (dy ? fy - y0 : 1 - (fy - y0)) * (dx ? fx - x0 : 1 - (fx - x0)); s += v * k; w += k;
+let depthGrid = null;
+// 국립해양조사원 150m 격자들 (지역별 파일 depth_<지역>.js 가 불러와지면 여기에 쌓임)
+const FINES = [];
+function fineAt(la, lo) { // 0.1m 단위 저장값 → m. 음수 = 평균해면보다 높은 갯벌
+  for (const F of FINES) {
+    if (la >= F.north || la <= F.south || lo <= F.west || lo >= F.east) continue;
+    const fy = (F.north - la) * F.res - 0.5, fx = (lo - F.west) * F.res - 0.5, y0 = Math.floor(fy), x0 = Math.floor(fx);
+    let s = 0, w = 0;
+    for (const [dy, dx] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
+      const y = y0 + dy, x = x0 + dx; if (y < 0 || x < 0 || y >= F.ny || x >= F.nx) continue;
+      const v = F.grid[y * F.nx + x]; if (!v) continue;
+      const k = (dy ? fy - y0 : 1 - (fy - y0)) * (dx ? fx - x0 : 1 - (fx - x0)); s += v * k; w += k;
+    }
+    if (w > 0.25) return s / w / 10 - (F.off || 0);
   }
-  return w > 0.25 ? s / w / 10 - (FINE.off || 0) : null; // 음수 = 평균해면보다 높은 갯벌
+  return null;
 }
+function fineHas(la, lo) { // 그 칸에 150m 자료가 있나 (그림용, 빠르게)
+  for (const F of FINES) {
+    const i = Math.floor((F.north - la) * F.res), j = Math.floor((lo - F.west) * F.res);
+    if (i >= 0 && j >= 0 && i < F.ny && j < F.nx && F.grid[i * F.nx + j] > 0) return true;
+  }
+  return false;
+}
+// ---------- 지역: 제목 + 지역별 150m 수심 파일 (지도가 그 지역 가까이 있을 때만 불러옴) ----------
+const REGIONS = [
+  {id: 'west', title: '서해 인천권 항로', file: 'depth_west.js', box: [36.6, 37.8, 125.8, 127.0]},
+  {id: 'east', title: '동해 양양삼척권 항로', file: 'depth_east.js', box: [36.65, 38.6, 128.4, 131.9]},
+];
+const DEFAULT_TITLE = '항로 지도';
 let lastDepthSrc = '';
 function depthAt(la, lo) { // 150m 자료가 있으면 그것, 없으면 ETOPO
   const f = fineAt(la, lo); if (f != null) { lastDepthSrc = '국립해양조사원 150m'; return f; }
@@ -438,21 +473,25 @@ if (DEP) {
     ctx.putImageData(img, 0, 0);
     return new Promise(res => cv.toBlob(b => res(URL.createObjectURL(b))));
   }
-  setTimeout(async () => {
-    const lutE = new Int8Array(256).map((_, v) => v ? band(v) : -1);
-    const fineHas = FINE ? (la, lo) => { const i = Math.floor((FINE.north - la) * FINE.res), j = Math.floor((lo - FINE.west) * FINE.res); return i >= 0 && j >= 0 && i < FINE.ny && j < FINE.nx && fineGrid[i * FINE.nx + j] > 0; } : () => false;
-    const urlE = await paint(DEP.nx, DEP.ny, DEP.north, DEP.south, DEP.west, DEP.east, la => Math.floor((DEP.north - la) * 240), x => x,
-      (gy, gx) => { const k = lutE[depthGrid[gy * DEP.nx + gx]]; if (k < 0) return -1; if (FINE && fineHas(DEP.north - (gy + 0.5) / 240, DEP.west + (gx + 0.5) / 240)) return -1; return k; }, 150);
-    depthLayer.addLayer(L.imageOverlay(urlE, [[DEP.south, DEP.west], [DEP.north, DEP.east]], {pane: 'chart', interactive: false}));
-    // 국립해양조사원 150m 격자를 그 위에 덧그림 (같은 색 띠, 더 자세함)
-    if (FINE) {
-      const off = FINE.off || 0, lutF = new Int8Array(65536).map((_, v) => v ? band(v / 10 - off) : -1);
-      const urlF = await paint(FINE.nx, FINE.ny, FINE.north, FINE.south, FINE.west, FINE.east, la => Math.floor((FINE.north - la) * FINE.res), x => x,
-        (gy, gx) => lutF[fineGrid[gy * FINE.nx + gx]], 175);
-      depthLayer.addLayer(L.imageOverlay(urlF, [[FINE.south, FINE.west], [FINE.north, FINE.east]], {pane: 'chart', interactive: false}));
-    }
-    window.__depthPainted = performance.now();
-  }, 30);
+  // ETOPO(전국) 그림: 150m 자료가 있는 칸은 비워 둠 → 150m 지역 파일이 새로 오면 다시 그림
+  const lutE = new Int8Array(256).map((_, v) => v ? band(v) : -1);
+  let etopoOverlay = null, etopoTimer = null;
+  async function paintEtopo() {
+    const url = await paint(DEP.nx, DEP.ny, DEP.north, DEP.south, DEP.west, DEP.east, la => Math.floor((DEP.north - la) * 240), x => x,
+      (gy, gx) => { const k = lutE[depthGrid[gy * DEP.nx + gx]]; if (k < 0) return -1; if (FINES.length && fineHas(DEP.north - (gy + 0.5) / 240, DEP.west + (gx + 0.5) / 240)) return -1; return k; }, 150);
+    const old = etopoOverlay; etopoOverlay = L.imageOverlay(url, [[DEP.south, DEP.west], [DEP.north, DEP.east]], {pane: 'chart', interactive: false});
+    depthLayer.addLayer(etopoOverlay); if (old) { depthLayer.removeLayer(old); URL.revokeObjectURL(old._url); }
+  }
+  // 150m 격자 하나를 위에 덧그림 (같은 색 띠, 더 자세함)
+  let lutF = null;
+  async function paintFine(F) {
+    lutF = lutF || new Int8Array(65536).map((_, v) => v ? band(v / 10 - (F.off || 0)) : -1);
+    const url = await paint(F.nx, F.ny, F.north, F.south, F.west, F.east, la => Math.floor((F.north - la) * F.res), x => x, (gy, gx) => lutF[F.grid[gy * F.nx + gx]], 175);
+    depthLayer.addLayer(L.imageOverlay(url, [[F.south, F.west], [F.north, F.east]], {pane: 'chart', interactive: false}));
+  }
+  window.__paintFine = paintFine;
+  window.__repaintEtopo = () => { clearTimeout(etopoTimer); etopoTimer = setTimeout(paintEtopo, 300); };
+  setTimeout(async () => { await paintEtopo(); window.__depthPainted = performance.now(); }, 30);
   depthLayer.on('add', () => legend.style.display = ''); depthLayer.on('remove', () => legend.style.display = 'none');
   overlays['<b>대략 수심</b> (색 띠)'] = depthLayer;
   // 범례
@@ -467,6 +506,36 @@ if (DEP) {
   legend.querySelector('.lgHead').onclick = () => { lgBody.style.display = lgBody.style.display === 'none' ? '' : 'none'; };
   depthLayer.addTo(map);
 }
+// 지역 파일을 다 받으면 격자를 풀어서 쌓고, 그림을 그림
+let fineTaken = 0;
+window.onFineDepthLoaded = () => {
+  const L0 = window.DEPTH_FINE_LIST || [];
+  for (; fineTaken < L0.length; fineTaken++) {
+    const m = L0[fineTaken], r = atob(m.b64), u = new Uint8Array(r.length); for (let k = 0; k < r.length; k++) u[k] = r.charCodeAt(k);
+    const F = {...m, grid: new Uint16Array(u.buffer)}; delete F.b64; FINES.push(F);
+    if (window.__paintFine) window.__paintFine(F);
+  }
+  if (window.__repaintEtopo) window.__repaintEtopo();
+  try { updateGpsInfo(); } catch (e) {} // (처음 불릴 땐 GPS 부분이 아직 준비 전이라 건너뜀)
+};
+window.onFineDepthLoaded(); // (이미 들어와 있던 것)
+const regionAsked = new Set();
+function loadRegionsInView() {
+  const b = map.getBounds().pad(0.3);
+  for (const R of REGIONS) {
+    if (regionAsked.has(R.id)) continue;
+    const [s, n, w, e] = R.box;
+    if (!b.intersects(L.latLngBounds([s, w], [n, e]))) continue;
+    regionAsked.add(R.id);
+    const sc = document.createElement('script'); sc.src = R.file; sc.onerror = () => console.log('수심 파일 없음:', R.file); document.head.appendChild(sc);
+  }
+}
+function updateTitle() {
+  const c = map.getCenter(), R = REGIONS.find(r => c.lat >= r.box[0] && c.lat <= r.box[1] && c.lng >= r.box[2] && c.lng <= r.box[3]);
+  const t = R ? R.title : DEFAULT_TITLE;
+  if (document.title !== t) { document.title = t; document.getElementById('appTitle').textContent = t; }
+}
+map.on('moveend', () => { loadRegionsInView(); updateTitle(); });
 for (const [name, L0] of Object.entries(CHART)) {
   const grp = L.layerGroup(), c = L0.color;
   for (const f of L0.f) {
@@ -1023,8 +1092,9 @@ function downloadGpx(g, name) {
 }
 showSaveDir();
 
-document.getElementById('btnExport').onclick = async () => {
-  const g = buildGpx(), name = stampName();
+document.getElementById('btnExport').onclick = () => saveGpxFile(buildGpx(), stampName());
+// GPX 저장 공통: PC 크롬은 고른 폴더(Area Point)에, 핸드폰은 다운로드 폴더에
+async function saveGpxFile(g, name) {
   if (!canPickDir) { downloadGpx(g, name); toast(`${name} 저장됨 (다운로드 폴더)`); return; }
   let h = await getDir();
   if (h && (await h.queryPermission({mode: 'readwrite'})) !== 'granted' && (await h.requestPermission({mode: 'readwrite'})) !== 'granted') h = null;
@@ -1035,7 +1105,7 @@ document.getElementById('btnExport').onclick = async () => {
     await w.write(new Blob([g], {type: 'application/gpx+xml'})); await w.close();
     toast(`${h.name}\\${name} 저장됨`);
   } catch (e) { downloadGpx(g, name); toast(`폴더에 저장 못 해서 다운로드 폴더에 저장함 (${e.message})`); }
-};
+}
 document.getElementById('btnReset').onclick = e => {
   if (e.target.dataset.arm !== '1') { e.target.dataset.arm = '1'; e.target.textContent = '한 번 더 누르면 초기화'; setTimeout(() => { e.target.dataset.arm = ''; e.target.textContent = '편집 초기화'; }, 3000); return; }
   setSelMode(false);
@@ -1069,18 +1139,33 @@ if (!TIDE_KEY) document.getElementById('setBox').open = true;
 const tideCache = new Map(); let tide = null; // tide = {port, josi, pts:[[ms, 평균해면 대비 m]], ext:[[ms, m, '만조'|'간조']]}
 const ymd = d => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 const hm = ms => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+// 조석예보(시계열) 지점: [코드, 이름, 위도, 경도] — TideBED가 안 되는 곳(동해)에서 씀
+const TIDE_STATIONS = [
+  ['DT_0012', '속초', 38.20722, 128.59416], ['DT_0006', '묵호', 37.55027, 129.11638], ['DT_0057', '동해항', 37.49472, 129.14388],
+  ['DT_0011', '후포', 36.6775, 129.45305], ['DT_0013', '울릉도', 37.49138, 130.91361], ['DT_0009', '포항', 36.04722, 129.38388],
+  ['DT_0020', '울산', 35.50194, 129.38722], ['DT_0005', '부산', 35.09638, 129.03527],
+];
 async function fetchTideDay(lat, lon, day) {
   lat = Math.round(lat * 10) / 10; lon = Math.round(lon * 10) / 10; // 약 10km 단위로 묶어서 호출 수를 줄임 (물때는 이 정도 거리에선 거의 같음)
   const key = `${lat},${lon},${day}`;
   if (tideCache.has(key)) return tideCache.get(key);
   const p = (async () => {
+    // 1) TideBED: 고른 위치에 맞춘 값 (서해·남해만 됨)
     const u = `https://apis.data.go.kr/1192136/tidebed/GetTidebedApiService?serviceKey=${encodeURIComponent(TIDE_KEY)}&type=json&lat=${lat.toFixed(4)}&lot=${lon.toFixed(4)}&reqDate=${day}&min=10&numOfRows=300`;
     const j = await (await fetch(u)).json();
-    if (j.header.resultCode !== '00') throw new Error(j.header.resultMsg);
-    let it = j.body.items && j.body.items.item || []; if (!Array.isArray(it)) it = [it];
-    if (!it.length) throw new Error('이 위치는 예측 조위 자료가 없습니다');
-    const jogo = +it[0].jogo, msl = +it[0].msl * jogo; // 선택 지점의 평균해면 (기준면 위 cm)
-    return {port: it[0].obsvtrNm, josi: it[0].josi, pts: it.map(r => [Date.parse(r.slctdDt.replace(' ', 'T') + ':00+09:00'), (+r.slctdHgt - msl) / 100])};
+    let it = j.body && j.body.items && j.body.items.item || []; if (!Array.isArray(it)) it = [it];
+    if (j.header.resultCode === '00' && it.length) {
+      const jogo = +it[0].jogo, msl = +it[0].msl * jogo; // 선택 지점의 평균해면 (기준면 위 cm)
+      return {port: it[0].obsvtrNm, josi: it[0].josi, pts: it.map(r => [Date.parse(r.slctdDt.replace(' ', 'T') + ':00+09:00'), (+r.slctdHgt - msl) / 100])};
+    }
+    // 2) 안 되면(동해 등) 가장 가까운 조석 예보지점 값. 평균해면은 그날 평균으로 셈 (동해는 조차 30cm 안팎이라 오차 몇 cm)
+    const st = TIDE_STATIONS.reduce((a, s) => hav([lat, lon], [s[2], s[3]]) < hav([lat, lon], [a[2], a[3]]) ? s : a);
+    const u2 = `https://apis.data.go.kr/1192136/tideFcstTime/GetTideFcstTimeApiService?serviceKey=${encodeURIComponent(TIDE_KEY)}&type=json&obsCode=${st[0]}&reqDate=${day}&min=10&numOfRows=300`;
+    const j2 = await (await fetch(u2)).json();
+    let it2 = j2.body && j2.body.items && j2.body.items.item || []; if (!Array.isArray(it2)) it2 = [it2];
+    if (j2.header.resultCode !== '00' || !it2.length) throw new Error(j2.header.resultMsg || j.header.resultMsg);
+    const mean = it2.reduce((s, r) => s + +r.tdlvHgt, 0) / it2.length;
+    return {port: st[1], josi: `${Math.round(hav([lat, lon], [st[2], st[3]]) / 1000)}km 떨어진 예보지점`, pts: it2.map(r => [Date.parse(r.predcDt.replace(' ', 'T') + ':00+09:00'), (+r.tdlvHgt - mean) / 100])};
   })();
   tideCache.set(key, p); p.catch(() => tideCache.delete(key));
   return p;
@@ -1110,7 +1195,7 @@ async function loadTide() {
 function renderTide() {
   if (!tide) return;
   const t = tideMsNow(), h = tideAt(t), h2 = tideAt(t + 6e5);
-  document.getElementById('tdPort').textContent = `기준항 ${tide.port} (시간차 ${tide.josi})`;
+  document.getElementById('tdPort').textContent = /예보지점/.test(tide.josi) ? `예보지점 ${tide.port} (${tide.josi.replace(' 예보지점', '')})` : `기준항 ${tide.port} (시간차 ${tide.josi})`;
   if (!tideFollowNow) tdTime.value = toLocalInput(t); else tdTime.value = toLocalInput(Date.now());
   document.getElementById('tdMain').innerHTML = h == null ? '이 시각 자료 없음' :
     `물높이 <span class="big">${h >= 0 ? '+' : ''}${h.toFixed(1)}m</span> (평균해면 대비) · ${h2 > h ? '⬆ 들물' : '⬇ 날물'}`
@@ -1145,7 +1230,7 @@ if (TIDE_KEY) {
 // ---------- 핸드폰 메뉴 ----------
 const sideEl = document.getElementById('side');
 document.getElementById('menuBtn').onclick = () => sideEl.classList.add('open');
-document.getElementById('sideClose').onclick = () => sideEl.classList.remove('open');
+document.getElementById('sideClose').onclick = document.getElementById('sheetClose').onclick = () => sideEl.classList.remove('open');
 
 // ---------- GPS: 내 위치에 보트 표시 ----------
 // 📍 누르면 시작 + 따라가기. 지도를 손으로 끌면 따라가기만 멈춤(버튼 점선), 다시 📍 누르면 다시 따라감
@@ -1155,6 +1240,42 @@ const BOAT_SVG = `<svg width="36" height="36" viewBox="0 0 36 36"><path d="M18 2
 function bearing(a, b) { const r = Math.PI / 180, y = Math.sin((b[1] - a[1]) * r) * Math.cos(b[0] * r), x = Math.cos(a[0] * r) * Math.sin(b[0] * r) - Math.sin(a[0] * r) * Math.cos(b[0] * r) * Math.cos((b[1] - a[1]) * r); return (Math.atan2(y, x) / r + 360) % 360; }
 async function keepScreenOn() { try { if ('wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {} }
 document.addEventListener('visibilitychange', () => { if (gpsWatch != null && document.visibilityState === 'visible') keepScreenOn(); });
+// ---------- 내 항적: GPS 위치를 쌓아서 선으로 (이 기기 브라우저에 저장) ----------
+// 10m 이상 움직였을 때만 점을 더함. 정확도 50m 넘게 나쁜 위치는 버림
+let myTrk = [], myTrkSaveTimer = null;
+const myTrkCase = L.polyline([], {color: '#fff', weight: 7, opacity: .85, interactive: false}); // 흰 테두리 (빨간 포인트와 구분)
+const myTrkLine = L.polyline([], {color: '#ff1744', weight: 4, opacity: 1, interactive: false});
+const myTrkGroup = L.layerGroup([myTrkCase, myTrkLine]).addTo(map);
+const myTrkLen = () => myTrk.reduce((s, p, i) => i ? s + hav(myTrk[i - 1], p) : 0, 0);
+function myTrkRender() {
+  const ll = myTrk.map(p => [p[0], p[1]]); myTrkLine.setLatLngs(ll); myTrkCase.setLatLngs(ll);
+  const info = document.getElementById('myTrkInfo');
+  info.textContent = myTrk.length ? `${km(myTrkLen())} · ${myTrk.length}점 · ${hm(myTrk[0][2])}부터` : '아직 없음';
+}
+function myTrkStore() { clearTimeout(myTrkSaveTimer); myTrkSaveTimer = setTimeout(() => kvSet('myTrack', myTrk).catch(() => {}), 3000); }
+function myTrkAdd(ll, t, acc) {
+  if (!document.getElementById('myTrkRec').checked || acc > 50) return;
+  const last = myTrk[myTrk.length - 1];
+  if (last && hav(last, ll) < 10) return;
+  myTrk.push([+ll[0].toFixed(6), +ll[1].toFixed(6), t]); myTrkRender(); myTrkStore();
+}
+kvGet('myTrack').then(v => { if (Array.isArray(v) && v.length) { myTrk = v; myTrkRender(); } else myTrkRender(); }).catch(() => myTrkRender());
+document.getElementById('myTrkShow').onchange = e => e.target.checked ? myTrkGroup.addTo(map) : map.removeLayer(myTrkGroup);
+document.getElementById('myTrkFit').onclick = () => { if (myTrk.length > 1) { map.fitBounds(myTrkLine.getBounds(), {padding: [30, 30]}); sideEl && sideEl.classList.remove('open'); } else toast('아직 기록이 없습니다'); };
+document.getElementById('myTrkSave').onclick = () => {
+  if (myTrk.length < 2) { toast('저장할 기록이 없습니다'); return; }
+  const iso = ms => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
+  const g = '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="lowrance-route-editor" xmlns="http://www.topografix.com/GPX/1/1">\n'
+    + `<trk><name>내 항적 ${new Date(myTrk[0][2]).toLocaleDateString('ko-KR')}</name><trkseg>\n`
+    + myTrk.map(p => `<trkpt lat="${p[0]}" lon="${p[1]}"><time>${iso(p[2])}</time></trkpt>`).join('\n') + '\n</trkseg></trk>\n</gpx>\n';
+  saveGpxFile(g, '내항적_' + stampName().replace(/^어탐기용_/, ''));
+};
+document.getElementById('myTrkDel').onclick = e => {
+  const b = e.target;
+  if (b.dataset.arm !== '1') { b.dataset.arm = '1'; b.textContent = '한 번 더 누르면 지움'; setTimeout(() => { b.dataset.arm = ''; b.textContent = '지우기'; }, 3000); return; }
+  b.dataset.arm = ''; b.textContent = '지우기'; myTrk = []; myTrkRender(); kvSet('myTrack', []).catch(() => {}); toast('내 항적을 지웠습니다');
+};
+
 function onFix(pos) {
   const c = pos.coords, ll = [c.latitude, c.longitude], t = pos.timestamp;
   let kn = c.speed != null && !isNaN(c.speed) ? c.speed * 1.94384 : null, hd = c.heading != null && !isNaN(c.heading) ? c.heading : null;
@@ -1164,6 +1285,7 @@ function onFix(pos) {
     if (hd == null && dist > 5) hd = bearing(lastFix.ll, ll); // GPS가 방향을 안 주면 움직인 방향으로
   }
   if (hd != null && (kn == null || kn > 0.5)) lastHeading = hd;
+  myTrkAdd(ll, t, c.accuracy);
   if (!lastFix || hav(lastFix.ll, ll) > 5 || t - lastFix.t > 10000) lastFix = {ll, t};
   if (!boat) {
     boat = L.marker(ll, {icon: L.divIcon({className: 'boat', html: BOAT_SVG, iconSize: [36, 36], iconAnchor: [18, 18]}), zIndexOffset: 1000, interactive: false}).addTo(map);
@@ -1227,6 +1349,7 @@ const ALL_PTS = DATA.wps.length ? DATA.wps.map(w => [w[3], w[4]])
 const fitAll = () => ALL_PTS.length ? map.fitBounds(L.latLngBounds(ALL_PTS), {padding: [20, 20]}) : map.setView([36.5, 127.8], 7);
 fitAll();
 renderAll();
+loadRegionsInView(); updateTitle();
 // 창이 숨겨진 상태로 열리면 지도 크기가 0이라 엉뚱한 곳을 보게 됨 → 크기가 잡히면 다시 맞춤
 let needRefit = map.getSize().x < 50 || map.getSize().y < 50;
 new ResizeObserver(() => {
