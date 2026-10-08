@@ -1179,7 +1179,7 @@ function updateGpsInfo() { // 물때가 나중에 도착해도 다시 계산되�
   if (!lastGps || gpsWatch == null) return;
   const {ll, kn} = lastGps, d = depthAt(ll[0], ll[1]), h = tideAt(Date.now());
   const dTxt = d == null ? '' : (h == null ? (d <= 0 ? ' · 갯벌' : ` · 수심 약 ${d < 10 ? d.toFixed(1) : Math.round(d)}m`) : (d + h <= 0 ? ' · 지금 드러남(갯벌)' : ` · 지금 수심 약 ${d + h < 10 ? (d + h).toFixed(1) : Math.round(d + h)}m`));
-  gpsTxt.textContent = `⛵ ${kn == null ? '-' : kn.toFixed(1)}kn · ${Math.round(lastHeading)}°${dTxt} · ±${Math.round(lastGps.acc)}m`;
+  gpsTxt.textContent = `⛵ ${kn == null ? '-' : (kn * 1.852).toFixed(1)}km/h · ${Math.round(lastHeading)}°${dTxt} · ±${Math.round(lastGps.acc)}m`; // 어탐기도 km/h 로 맞춤
 }
 function onGpsErr(e) {
   const why = e.code === 1 ? '위치 권한이 꺼져 있습니다. 주소창 왼쪽 자물쇠 → 권한 → 위치 "허용"으로 바꾼 뒤 다시 누르세요.'
