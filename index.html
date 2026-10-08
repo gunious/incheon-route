@@ -1,0 +1,1239 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>서해 인천권 항로</title>
+<meta name="theme-color" content="#0a3d62">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- 국립해양조사원 해도 정보(해저케이블·항로 등). 같은 폴더에 없으면 겹치기 없이 동작 -->
+<script src="chart_data.js"></script>
+<!-- 대략 수심 (NOAA ETOPO 2022). 같은 폴더에 없으면 수심 없이 동작 -->
+<script src="depth_data.js"></script>
+<!-- 공공데이터포털 인증키 (물때). 없으면 물때 없이 동작 -->
+<script src="api_key.js"></script>
+<style>
+  :root { --bg: #fff; --fg: #1d1d1f; --muted: #6b6b70; --line: #e2e2e6; --accent: #0a66d8; --danger: #c62828; --hi: #eef4ff; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font-family: "Malgun Gothic", system-ui, sans-serif; font-size: 13px; color: var(--fg); background: #111; display: flex; }
+  #side { width: 400px; background: var(--bg); display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+  #map { flex: 1; }
+  .sec { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .sec h2 { font-size: 13px; margin: 0 0 6px; display: flex; justify-content: space-between; align-items: center; }
+  .sec h2 small { font-weight: normal; color: var(--muted); }
+  .scroll { overflow: auto; flex: 1; }
+  button { font: inherit; padding: 4px 9px; border: 1px solid #c5c5cc; background: #f6f6f8; border-radius: 5px; cursor: pointer; }
+  button:hover { background: #ececf0; }
+  button.pri { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.dan { color: var(--danger); }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; gap: 6px; align-items: center; padding: 4px 0; border-bottom: 1px solid #f0f0f2; }
+  .row:last-child { border-bottom: 0; }
+  .row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .row input[type=text] { flex: 1; min-width: 0; font: inherit; padding: 2px 4px; border: 1px solid transparent; border-radius: 4px; }
+  .row input[type=text]:hover, .row input[type=text]:focus { border-color: #c5c5cc; }
+  .x { padding: 1px 6px; font-size: 11px; }
+  .big { background: #fff4e5; }
+  #mode { display: none; background: #fff8d6; border: 1px solid #f0d36b; border-radius: 6px; padding: 8px; margin-top: 8px; line-height: 1.5; }
+  #mode.on { display: block; }
+  #mode input { width: 100%; font: inherit; padding: 4px 6px; margin: 4px 0; border: 1px solid #c5c5cc; border-radius: 4px; }
+  .stat { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .stat b { color: var(--fg); }
+  #q { width: 100%; padding: 5px 6px; border: 1px solid #c5c5cc; border-radius: 5px; font: inherit; }
+  #res div { padding: 3px 4px; cursor: pointer; border-bottom: 1px solid #f0f0f2; }
+  #res div:hover { background: var(--hi); }
+  #cur { position: absolute; z-index: 1000; bottom: 18px; right: 10px; background: rgba(0,0,0,.7); color: #fff; padding: 4px 8px; border-radius: 5px; font: 12px/1.4 Consolas, monospace; pointer-events: none; }
+  .pop td { padding: 1px 6px 1px 0; font-family: Consolas, monospace; }
+  .rlabel { background: #fff; border: 1px solid #333; border-radius: 3px; padding: 0 3px; font-size: 11px; font-weight: bold; white-space: nowrap; }
+  #toast { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); background: #222; color: #fff; padding: 6px 12px; border-radius: 6px; z-index: 2000; display: none; }
+  #selBar { padding: 8px 12px; border-top: 2px solid var(--line); background: #fafafc; }
+  #selBar.on { background: #fff0f0; border-top-color: #c62828; }
+  #tideBox { position: absolute; z-index: 850; top: 10px; left: calc(400px + (100% - 400px) / 2); transform: translateX(-50%); background: rgba(255,255,255,.95); border-radius: 8px; padding: 6px 10px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.3); min-width: 330px; display: none; }
+  #tideBox .row1 { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #tideBox input { font: inherit; padding: 1px 3px; }
+  #tideBox .big { font-size: 15px; font-weight: bold; }
+  #dropChoice { position: fixed; inset: 0; z-index: 3001; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; }
+  #dropChoice > div { background: #fff; border-radius: 10px; padding: 18px 22px; font-size: 14px; line-height: 1.7; text-align: center; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+  #empty { position: absolute; z-index: 900; left: 400px; right: 0; top: 0; bottom: 0; display: none; align-items: center; justify-content: center; pointer-events: none; }
+  #empty > div { pointer-events: auto; background: rgba(255,255,255,.95); border-radius: 10px; padding: 18px 22px; font-size: 14px; line-height: 1.7; text-align: center; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+  #dropHint { position: fixed; inset: 0; z-index: 3000; background: rgba(10,102,216,.25); border: 4px dashed #0a66d8; display: none; align-items: center; justify-content: center; font-size: 22px; font-weight: bold; color: #fff; text-shadow: 0 1px 4px #000; pointer-events: none; }
+  @media (max-width: 700px) { #empty { left: 0; } }
+  #gpsBtn { position: fixed; z-index: 1000; right: 12px; bottom: 90px; width: 52px; height: 52px; border-radius: 50%; font-size: 24px; padding: 0; background: #fff; border: 2px solid #0a66d8; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+  #gpsBtn.on { background: #0a66d8; }
+  #gpsBtn.on.nofollow { background: #fff; border-style: dashed; }
+  #gpsInfo { position: fixed; z-index: 1000; left: 50%; transform: translateX(-50%); bottom: 26px; background: rgba(10,61,98,.92); color: #fff; padding: 6px 10px; border-radius: 18px; font-size: 13px; display: none; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+  #gpsInfo .x { color: #fff; background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.4); margin-left: 4px; }
+  .boat svg { transition: transform .4s; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+  #sideClose, #menuBtn { display: none; }
+  /* 핸드폰: 지도를 꽉 채우고, 메뉴는 버튼으로 여닫음 */
+  @media (max-width: 700px) {
+    body { display: block; }
+    #map { position: fixed; inset: 0; }
+    #side { position: fixed; z-index: 1500; left: 0; right: 0; bottom: 0; width: 100%; height: 70%; border-radius: 12px 12px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,.35); transform: translateY(105%); transition: transform .2s; }
+    #side.open { transform: none; }
+    #sideClose { display: inline-block; }
+    #menuBtn { display: block; position: fixed; z-index: 1000; left: 10px; bottom: 26px; padding: 9px 14px; font-size: 15px; border-radius: 22px; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+    #empty { left: 0; }
+    #tideBox { left: 50%; top: 6px; min-width: 0; width: calc(100% - 110px); padding: 4px 8px; font-size: 11px; }
+    #tideBox svg { width: 100%; height: 40px; }
+    #tideBox .big { font-size: 13px; }
+    #cur { display: none; }
+    #depthLegend { bottom: 78px !important; font-size: 10px !important; padding: 4px 6px !important; }
+    .tdNote { display: none; }
+    #gpsInfo { bottom: 82px; font-size: 12px; max-width: calc(100% - 90px); white-space: normal; text-align: center; }
+    .leaflet-control-layers { margin-top: 70px !important; }
+    button { padding: 6px 10px; } .x { padding: 4px 8px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<div id="side">
+  <div class="sec">
+    <h2>서해 인천권 항로 <span><small id="saved"></small> <button class="x" id="sideClose" title="메뉴 닫기">✕</button></span></h2>
+    <details id="setBox" style="margin-bottom:4px"><summary class="stat" style="cursor:pointer">설정 (물때 인증키)</summary>
+      <div class="stat" style="margin-top:4px">공공데이터포털 일반 인증키(Decoding). 이 기기에만 저장되고 어디에도 올라가지 않습니다.</div>
+      <div style="display:flex;gap:4px;margin-top:4px"><input id="keyIn" type="password" placeholder="인증키 붙여넣기" style="flex:1;font:inherit;padding:3px 5px">
+      <button class="x" id="keySave">저장</button><button class="x dan" id="keyDel">지우기</button></div>
+    </details>
+    <div class="stat" id="baseInfo"></div>
+    <div class="stat" id="stat"></div>
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+      <button class="pri" id="btnLoad">파일 열기 (.usr / .gpx)</button><input type="file" id="fileIn" accept=".usr,.gpx" hidden>
+      <button id="btnMerge" style="display:none" title="지금 파일은 그대로 두고 다른 파일의 내용을 더함">+ 파일 추가 (합치기)</button><input type="file" id="fileIn2" accept=".usr,.gpx" hidden>
+      <button id="btnClose" style="display:none">파일 닫기</button>
+      <button class="pri" id="btnExport">어탐기용 GPX 저장</button>
+      <button id="btnReset" class="dan">편집 초기화</button>
+    </div>
+    <div class="stat" id="saveDirInfo" style="margin-top:6px"></div>
+  </div>
+  <div class="sec">
+    <h2>항로(Route) <small>웨이포인트를 이어 만든 짧은 선</small></h2>
+    <button class="pri" id="btnNew">+ 새 항로 그리기</button>
+    <div id="mode">
+      <b>항로 그리기 중</b> · 지도에서 <b>웨이포인트 점</b>을 차례로 클릭하세요. 빈 바다를 클릭하면 경유점이 생깁니다 (섬·얕은 곳 돌아갈 때).
+      <div id="draftInfo" class="stat"></div>
+      <input id="draftName" placeholder="항로 이름 (예: 전곡항→풍도)">
+      <div style="display:flex;gap:6px">
+        <button class="pri" id="btnDone">완료</button><button id="btnUndo">마지막 점 취소</button><button id="btnCancel">취소</button>
+      </div>
+    </div>
+  </div>
+  <div class="scroll">
+    <div class="sec">
+      <h2>항로 목록 <small>체크한 항로만 지도에 표시 (저장은 전부)</small></h2>
+      <div class="row" id="rtHead" style="border-bottom:1px solid var(--line);font-weight:bold">
+        <label style="display:flex;gap:6px;align-items:center;flex:1;cursor:pointer"><input type="checkbox" id="rtAll"> 전체 선택 <span class="meta" id="rtAllInfo" style="font-weight:normal"></span></label>
+        <button class="x" id="rtFit" title="체크한 항로가 모두 보이게 지도 맞추기">선택한 것 보기</button>
+      </div>
+      <input id="rtQ" placeholder="항로 이름으로 찾기 (예: Sea bass, Rock)" style="width:100%;padding:4px 6px;margin:6px 0 2px;border:1px solid #c5c5cc;border-radius:5px;font:inherit">
+      <div id="routes"></div>
+    </div>
+    <div class="sec">
+      <h2>기존 항적(Trail) <small>체크한 것만 어탐기로 보냄</small></h2>
+      <div class="stat" style="margin-bottom:4px">주황색 줄이 어탐기를 느리게 만드는 큰 항적입니다. 필요하면 [항로로] 를 눌러 몇 개 점으로 줄인 항로로 바꿀 수 있습니다.</div>
+      <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center" class="stat">
+        간략화 허용오차 <input id="tol" type="number" value="100" min="5" step="5" style="width:60px"> m
+      </div>
+      <div class="row" style="border-bottom:1px solid var(--line);font-weight:bold">
+        <label style="display:flex;gap:6px;align-items:center;flex:1;cursor:pointer"><input type="checkbox" id="trAll"> 전체 선택 <span class="meta" id="trAllInfo" style="font-weight:normal"></span></label>
+        <button class="x" id="trSmall" title="500점 이상인 큰 항적만 빼고 모두 선택">큰 항적 빼고 선택</button>
+      </div>
+      <div id="trails"></div>
+    </div>
+    <div class="sec" id="wpSec">
+      <h2>웨이포인트 <span><small id="wpCount"></small> <button class="x" id="btnFit">전체 보기</button></span></h2>
+      <div id="wpGroups"></div>
+      <div id="wpDelBox"></div>
+      <div style="display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap">
+        <b>중복 찾기</b>
+        <select id="dupMode" style="font:inherit;padding:2px">
+          <option value="">끔 (전체 보기)</option>
+          <option value="name">이름이 같은 것만</option>
+          <option value="pos">위치가 겹치는 것만</option>
+        </select>
+        <span id="dupMWrap" style="display:none"><input id="dupM" type="number" value="5" min="0.5" step="0.5" style="width:52px"> m 이내</span>
+      </div>
+      <div class="stat" id="dupInfo" style="color:#c62828"></div>
+      <label style="display:block;margin:4px 0"><input type="checkbox" id="lblOn" checked> 지도에 포인트 이름 표시 <span class="stat" id="lblInfo"></span></label>
+      <input id="q" placeholder="이름 검색 (예: GGIJ1990, Port) · 비우면 지금 화면 안의 포인트">
+      <div id="res"></div>
+    </div>
+  </div>
+  <div id="selBar">
+    <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="selMode"> <b>여러 개 선택해서 삭제</b></label>
+    <div id="selHelp" class="stat" style="display:none">지도에서 점을 <b>클릭</b>하거나 <b>마우스로 끌어 네모</b>를 그리면 선택됩니다. 선택된 점을 다시 누르면 해제.</div>
+    <div id="selActions" style="display:none;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px">
+      <span>선택 <b id="selN">0</b>개</span>
+      <button class="x dan" id="selDel">선택한 것 삭제</button>
+      <button class="x" id="selClear">선택 해제</button>
+      <button class="x" id="selView">화면 안 전부 선택</button>
+    </div>
+  </div>
+</div>
+<div id="map"></div>
+<div id="empty"><div>
+  <b>로렌스 어탐기 파일을 여세요</b><br>
+  어탐기에서 내보낸 <b>.usr</b> 또는 <b>.gpx</b> 파일을<br>이 지도 위로 끌어다 놓거나 아래 버튼을 누르세요.<br>
+  <button class="pri" id="btnLoad2" style="margin-top:10px;font-size:15px;padding:8px 18px">파일 열기 (.usr / .gpx)</button>
+</div></div>
+<div id="dropHint">여기에 놓으면 파일을 엽니다</div>
+<div id="dropChoice"><div>
+  <b id="dcName"></b><br>이 파일을 어떻게 열까요?<br>
+  <div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
+    <button class="pri" id="dcMerge">지금 파일에 합치기</button>
+    <button id="dcOpen">새로 열기 (지금 파일 닫기)</button>
+    <button id="dcCancel">취소</button>
+  </div>
+</div></div>
+<button id="menuBtn" class="pri">☰ 메뉴</button>
+<button id="gpsBtn" title="내 위치 (GPS)">📍</button>
+<div id="gpsInfo"><span id="gpsTxt"></span> <button class="x" id="gpsOff">GPS 끄기</button></div>
+<div id="tideBox">
+  <div class="row1"><b id="tdHead" style="cursor:pointer">물때 ▾</b> <span id="tdPort" class="stat"></span>
+    <span id="tdTimeWrap"><input type="datetime-local" id="tdTime"> <button class="x" id="tdNow">지금</button></span></div>
+  <div id="tdMain" style="margin-top:3px"></div>
+  <div id="tdMore"><svg id="tdChart" width="330" height="56" style="display:block;margin-top:2px"></svg>
+  <div id="tdExt" class="stat"></div></div>
+</div>
+<div id="cur"></div>
+<div id="toast"></div>
+<script>
+// ---------- 브라우저 보관함 (IndexedDB): 마지막으로 연 파일·저장 폴더를 기억 ----------
+function idb(mode, fn) {
+  return new Promise((res, rej) => {
+    const rq = indexedDB.open('lowrance-route-editor', 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore('kv');
+    rq.onerror = () => rej(rq.error);
+    rq.onsuccess = () => { const tx = rq.result.transaction('kv', mode), r = fn(tx.objectStore('kv')); tx.oncomplete = () => res(r && r.result); tx.onerror = () => rej(tx.error); };
+  });
+}
+const kvGet = k => idb('readonly', s => s.get(k));
+const kvSet = (k, v) => idb('readwrite', s => s.put(v, k));
+// 마지막으로 연 파일을 꺼낸 뒤 본 프로그램 실행 (창을 실수로 닫아도 이어서 작업)
+(async () => {
+  try { window.BASE = await kvGet('base'); } catch (e) { window.BASE = null; }
+  const s = document.createElement('script'); s.textContent = document.getElementById('main').textContent; document.body.appendChild(s);
+})();
+</script>
+<script type="text/plain" id="main">
+let COLORS = {};
+const BIG = 500; // 이 점 수 이상인 항적은 기본으로 어탐기 전송 제외
+const EMPTY_GPX = '<gpx xmlns="http://www.topografix.com/GPX/1/1"></gpx>';
+const BASE = window.BASE && window.BASE.gpx ? window.BASE : null;
+
+function parseGpx(text, allowEmpty) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.querySelector('parsererror')) throw new Error('GPX 형식이 아닙니다');
+  const kid = (el, tag) => { const c = [...el.children].find(c => c.localName === tag); return c ? c.textContent.trim() : ''; };
+  const all = (el, tag) => [...el.getElementsByTagNameNS('*', tag)];
+  const ll = el => [+el.getAttribute('lat'), +el.getAttribute('lon')];
+  const ok = ([la, lo]) => isFinite(la) && isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180 && !(la === 0 && lo === 0);
+  const wps = all(doc, 'wpt').map(el => {
+    const [lat, lon] = ll(el), name = kid(el, 'name');
+    return ['', name, kid(el, 'desc'), lat, lon, dms(lat, 'N', 'S'), dms(lon, 'E', 'W'), ddm(lat, 'N', 'S'), ddm(lon, 'E', 'W'), ''];
+  }).filter(w => ok([w[3], w[4]]));
+  const routes = all(doc, 'rte').map(el => ({name: kid(el, 'name'),
+    pts: all(el, 'rtept').map(p => { const [lat, lon] = ll(p); return {lat, lon, name: kid(p, 'name')}; }).filter(p => ok([p.lat, p.lon]))})).filter(r => r.pts.length);
+  const trails = all(doc, 'trk').map(el => [kid(el, 'name'), '', all(el, 'trkpt').map(ll).filter(ok)]).filter(t => t[2].length);
+  if (!allowEmpty && !wps.length && !routes.length && !trails.length) throw new Error('웨이포인트·항로·항적이 하나도 없습니다');
+  return {wps, routes, trails};
+}
+// 웨이포인트 색 묶음: 설명(desc)이 같은 것끼리. 많은 순으로 6개까지 색을 주고 나머지는 '기타'
+function assignGroups(wps) {
+  const PAL = ['#ffcc00', '#00e5ff', '#7cff4d', '#ff9f1c', '#c77dff', '#ffffff'];
+  const cnt = new Map(); wps.forEach(w => { if (w[2]) cnt.set(w[2], (cnt.get(w[2]) || 0) + 1); });
+  const top = [...cnt].filter(([, n]) => n >= 10).sort((a, b) => b[1] - a[1]).slice(0, PAL.length).map(([d]) => d);
+  COLORS = {}; top.forEach((d, k) => COLORS[d] = PAL[k]); COLORS['기타'] = '#ff4d6d';
+  wps.forEach(w => w[0] = top.includes(w[2]) ? w[2] : '기타');
+}
+
+// ---------- 로렌스 .usr (버전 4~6) → GPX 글자로 변환 ----------
+function usrToGpx(buf) {
+  const v = new DataView(buf), u8 = new Uint8Array(buf); let p = 0;
+  const need = n => { if (p + n > buf.byteLength) throw new Error('USR 파일이 중간에 끊겼거나 지원하지 않는 형식입니다'); };
+  const i32 = () => { need(4); const x = v.getInt32(p, true); p += 4; return x; };
+  const u32 = () => { need(4); const x = v.getUint32(p, true); p += 4; return x; };
+  const i16 = () => { need(2); const x = v.getInt16(p, true); p += 2; return x; };
+  const u8r = () => { need(1); return u8[p++]; };
+  const f32 = () => { need(4); const x = v.getFloat32(p, true); p += 4; return x; };
+  const f64 = () => { need(8); const x = v.getFloat64(p, true); p += 8; return x; };
+  const skip = n => { need(n); p += n; };
+  const str = enc => { const n = i32(); if (n < 0 || n > 100000) throw new Error('USR 형식을 읽을 수 없습니다'); need(n); const s = new TextDecoder(enc).decode(u8.subarray(p, p + n)); p += n; return s; };
+  const ver = i32();
+  if (ver < 1 || ver > 20) throw new Error('로렌스 USR 파일이 아닙니다');
+  if (ver < 4 || ver > 6) throw new Error(`USR 버전 ${ver}은(는) 지원하지 않습니다 (4~6만 가능). 어탐기에서 GPX로 내보내서 여세요`);
+  i32(); str('latin1'); str('latin1'); i32(); i32(); u8r(); u32(); str('latin1');   // 머리말
+  const R = 6356752.3142, deg = r => r * 180 / Math.PI; // 로렌스 메르카토르 좌표 → 위경도
+  const x = s => s.replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
+  const out = ['<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="lowrance-route-editor" xmlns="http://www.topografix.com/GPX/1/1">\n'];
+  const nw = i32(); if (nw < 0 || nw > 200000) throw new Error('USR 형식을 읽을 수 없습니다');
+  for (let k = 0; k < nw; k++) {
+    skip(16); u32(); skip(8); i16(); const name = str('utf-16le'); u32();
+    const X = i32(), Y = i32(); u32(); i16(); i16(); let desc = str('utf-16le');
+    f32(); i32(); i32(); u8r(); f32(); i32(); i32(); i32();
+    if (/unknown waypoint symbol/i.test(desc)) desc = '';
+    const lon = deg(X / R), lat = deg(2 * Math.atan(Math.exp(Y / R)) - Math.PI / 2);
+    out.push(`<wpt lat="${lat.toFixed(7)}" lon="${lon.toFixed(7)}"><name>${x(name)}</name>${desc ? `<desc>${x(desc)}</desc>` : ''}</wpt>\n`);
+  }
+  const nr = i32(), warn = [];
+  if (nr > 0) {
+    warn.push(`이 USR 파일의 항로 ${nr}개와 항적은 읽지 못했습니다 (항로가 든 USR 형식은 아직 지원 안 함). 항로까지 보려면 어탐기에서 GPX로 내보내서 여세요.`);
+  } else {
+    const nt = i32();
+    for (let t = 0; t < nt; t++) {
+      skip(12); const tv = i16(), name = str('utf-16le'); u32(); u32(); str('utf-16le'); i32(); i32(); u8r(); u8r(); u8r();
+      if (tv < 6) { const nd = i32(); skip(nd); }
+      const np = i32(); if (np < 0 || np > 5000000) throw new Error('USR 항적을 읽을 수 없습니다');
+      const pts = [];
+      for (let k = 0; k < np; k++) {
+        i16(); u8r(); u32(); const lon = deg(f64()), lat = deg(f64()); const nf = i32(); skip(nf * 5);
+        pts.push(`<trkpt lat="${lat.toFixed(7)}" lon="${lon.toFixed(7)}"/>`);
+      }
+      out.push(`<trk><name>${x(name)}</name><trkseg>${pts.join('')}</trkseg></trk>\n`);
+    }
+  }
+  out.push('</gpx>\n');
+  return {gpx: out.join(''), warn};
+}
+
+const DATA = parseGpx(BASE ? BASE.gpx : EMPTY_GPX, true);
+assignGroups(DATA.wps);
+let h = 0; const SRC = BASE ? BASE.gpx : ''; for (let k = 0; k < SRC.length; k++) h = (h * 31 + SRC.charCodeAt(k)) | 0;
+const KEY = 'lowrance-route-editor-v2-' + (h >>> 0).toString(36); // 연 파일마다 편집 상태를 따로 저장
+
+// ---------- 상태 (브라우저에 자동 저장) ----------
+const nextSeq = rs => 1 + Math.max(0, ...rs.flatMap(r => r.pts.map(p => +(/^R(\d+)-/.exec(p.name) || [0, 0])[1])));
+const freshState = () => ({routes: JSON.parse(JSON.stringify(DATA.routes)), deleted: [], trailDel: [], trailOn: {}, seq: nextSeq(DATA.routes), wpNames: {}, trailNames: {}});
+let S = freshState();
+try { const raw = localStorage.getItem(KEY); if (raw) S = Object.assign(S, JSON.parse(raw)); } catch (e) {}
+const liveTrail = i => !S.trailDel.includes(i);
+const sendTrail = i => liveTrail(i) && S.trailOn[i]; // 어탐기로 보낼 항적
+DATA.trails.forEach((t, i) => { if (!(i in S.trailOn)) S.trailOn[i] = t[2].length < BIG; });
+
+// ---------- 이름 바꾸기 (원래 이름은 따로 보관, 바꾼 것만 저장) ----------
+const ORIG_WP = DATA.wps.map(w => w[1]), ORIG_TR = DATA.trails.map(t => t[0]);
+function applyNames() {
+  DATA.wps.forEach((w, i) => w[1] = S.wpNames[i] ?? ORIG_WP[i]);
+  DATA.trails.forEach((t, i) => t[0] = S.trailNames[i] ?? ORIG_TR[i]);
+}
+applyNames();
+const trTip = i => `${DATA.trails[i][0] || '(이름없음)'} (${DATA.trails[i][2].length.toLocaleString()}점)`;
+function renameWp(i, n) {
+  n = n.trim(); if (!n || n === DATA.wps[i][1]) return;
+  const old = DATA.wps[i][1]; DATA.wps[i][1] = n;
+  if (n === ORIG_WP[i]) delete S.wpNames[i]; else S.wpNames[i] = n;
+  markers[i].setTooltipContent(n); save();
+  if (dupGroup) { computeDups(); renderWps(); } else renderLabels();
+  toast(`웨이포인트 이름: ${old} → ${n}`);
+}
+function renameTrail(i, n) {
+  n = n.trim(); if (n === DATA.trails[i][0]) return;
+  const old = DATA.trails[i][0] || '(이름없음)'; DATA.trails[i][0] = n;
+  if (n === ORIG_TR[i]) delete S.trailNames[i]; else S.trailNames[i] = n;
+  trailLines[i].setTooltipContent(trTip(i)); save(); toast(`항적 이름: ${old} → ${n || '(이름없음)'}`);
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); document.getElementById('saved').textContent = '자동 저장됨'; }
+  catch (e) { document.getElementById('saved').textContent = '저장 안 됨(브라우저 설정)'; }
+}
+
+// ---------- 좌표 유틸 ----------
+function dms(v, p, n) { const h = v >= 0 ? p : n; v = Math.abs(v); let d = Math.floor(v), m = (v - d) * 60, mi = Math.floor(m), s = (m - mi) * 60;
+  if (+s.toFixed(2) >= 60) { s = 0; mi++; } if (mi >= 60) { mi = 0; d++; }
+  return `${d}°${String(mi).padStart(2, '0')}'${s.toFixed(2).padStart(5, '0')}"${h}`; }
+function ddm(v, p, n) { const h = v >= 0 ? p : n; v = Math.abs(v); const d = Math.floor(v), m = (v - d) * 60;
+  return `${d}°${m.toFixed(3).padStart(6, '0')}'${h}`; }
+function hav(a, b) { const R = 6371000, r = Math.PI / 180, dLa = (b[0] - a[0]) * r, dLo = (b[1] - a[1]) * r;
+  const x = Math.sin(dLa / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); }
+const pathLen = pts => pts.reduce((s, p, i) => i ? s + hav(pts[i - 1], p) : 0, 0);
+const km = m => (m / 1000).toFixed(m < 10000 ? 2 : 1) + 'km';
+// Douglas-Peucker (미터 단위 평면 근사)
+function simplify(pts, tol) {
+  if (pts.length < 3) return pts.slice();
+  const la0 = pts[0][0] * Math.PI / 180, mx = 111320 * Math.cos(la0), my = 110540;
+  const P = pts.map(p => [p[1] * mx, p[0] * my]), keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1;
+  const st = [[0, pts.length - 1]];
+  while (st.length) { const [a, b] = st.pop(); let md = -1, mi = -1;
+    const [ax, ay] = P[a], [bx, by] = P[b], dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+    for (let i = a + 1; i < b; i++) { const [px, py] = P[i]; let t = L2 ? ((px - ax) * dx + (py - ay) * dy) / L2 : 0; t = Math.max(0, Math.min(1, t));
+      const d = Math.hypot(px - ax - t * dx, py - ay - t * dy); if (d > md) { md = d; mi = i; } }
+    if (md > tol) { keep[mi] = 1; st.push([a, mi], [mi, b]); } }
+  return pts.filter((_, i) => keep[i]);
+}
+function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = 'none', 2200); }
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+
+// ---------- 지도 ----------
+const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 20, maxNativeZoom: 18, attribution: 'Esri World Imagery'});
+const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 20, maxNativeZoom: 19, attribution: '© OpenStreetMap'});
+const sea = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {maxZoom: 20, maxNativeZoom: 18, attribution: 'OpenSeaMap'});
+const map = L.map('map', {layers: [sat], preferCanvas: true, doubleClickZoom: false});
+const renderer = L.canvas({padding: 0.5, tolerance: 4});
+// ---------- 해도 정보 겹치기 (국립해양조사원 자료, chart_data.js) ----------
+// 포인트 아래 층에 그림. 클릭은 포인트가 먼저 받고, 빈 곳을 누르면 그 자리의 해도 정보를 보여줌
+map.createPane('chart'); map.getPane('chart').style.zIndex = 350;
+const chartRenderer = L.canvas({pane: 'chart', padding: 0.5});
+const CHART = window.CHART_DATA && window.CHART_DATA.layers || {};
+const CHART_ON = ['해저케이블', '항로', '통항분리', '속도제한구역', '낚시금지구역']; // 처음에 켜 둘 층
+const chartLayers = {}, overlays = {'해도 표지(OpenSeaMap)': sea};
+
+// ---------- 대략 수심 (국립해양조사원 150m + 바깥은 ETOPO 2022 460m) ----------
+window.__t0 = performance.now();
+const DEP = window.DEPTH_DATA && window.DEPTH_DATA.b64 ? window.DEPTH_DATA : null;
+const DEPTH_BANDS = [[0, '#d6c08f'], [2, '#e6fbff'], [5, '#b9f0f7'], [10, '#7fdcec'], [20, '#45c3dd'], [30, '#1fa5c9'], [50, '#0b84b0'], [100, '#08628f'], [200, '#06446b'], [1e9, '#042a45']];
+let depthGrid = null, fineGrid = null;
+const FINE = window.DEPTH_FINE && window.DEPTH_FINE.b64 ? window.DEPTH_FINE : null;
+if (FINE) { const r = atob(FINE.b64), u = new Uint8Array(r.length); for (let k = 0; k < r.length; k++) u[k] = r.charCodeAt(k); fineGrid = new Uint16Array(u.buffer); }
+function fineAt(la, lo) { // 국립해양조사원 150m 격자 (0.1m 단위)
+  if (!fineGrid || la >= FINE.north || la <= FINE.south || lo <= FINE.west || lo >= FINE.east) return null;
+  const fy = (FINE.north - la) * FINE.res - 0.5, fx = (lo - FINE.west) * FINE.res - 0.5, y0 = Math.floor(fy), x0 = Math.floor(fx);
+  let s = 0, w = 0;
+  for (const [dy, dx] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
+    const y = y0 + dy, x = x0 + dx; if (y < 0 || x < 0 || y >= FINE.ny || x >= FINE.nx) continue;
+    const v = fineGrid[y * FINE.nx + x]; if (!v) continue;
+    const k = (dy ? fy - y0 : 1 - (fy - y0)) * (dx ? fx - x0 : 1 - (fx - x0)); s += v * k; w += k;
+  }
+  return w > 0.25 ? s / w / 10 - (FINE.off || 0) : null; // 음수 = 평균해면보다 높은 갯벌
+}
+let lastDepthSrc = '';
+function depthAt(la, lo) { // 150m 자료가 있으면 그것, 없으면 ETOPO
+  const f = fineAt(la, lo); if (f != null) { lastDepthSrc = '국립해양조사원 150m'; return f; }
+  lastDepthSrc = 'ETOPO 460m'; return etopoAt(la, lo);
+}
+function etopoAt(la, lo) { // 둘레 4칸 보간. 육지·범위 밖이면 null
+  if (!depthGrid || la > DEP.north || la < DEP.south || lo < DEP.west || lo > DEP.east) return null;
+  const fy = (DEP.north - la) * 240 - 0.5, fx = (lo - DEP.west) * 240 - 0.5, y0 = Math.floor(fy), x0 = Math.floor(fx);
+  let s = 0, w = 0;
+  for (const [dy, dx] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
+    const y = y0 + dy, x = x0 + dx; if (y < 0 || x < 0 || y >= DEP.ny || x >= DEP.nx) continue;
+    const v = depthGrid[y * DEP.nx + x]; if (!v) continue;
+    const k = (dy ? fy - y0 : 1 - (fy - y0)) * (dx ? fx - x0 : 1 - (fx - x0)); s += v * k; w += k;
+  }
+  return w > 0.25 ? s / w : null;
+}
+if (DEP) {
+  const raw = atob(DEP.b64); depthGrid = new Uint8Array(raw.length); for (let k = 0; k < raw.length; k++) depthGrid[k] = raw.charCodeAt(k); // (Array.from 방식은 10배 이상 느림)
+  // 색 그림은 화면이 먼저 뜬 뒤에 만듦 (처음 여는 속도). 값 → 색은 미리 만든 표로 바로 찾음
+  const depthLayer = L.layerGroup();
+  const rgb = DEPTH_BANDS.map(([, c]) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)));
+  const band = d => { for (let k = 0; k < DEPTH_BANDS.length; k++) if (d < DEPTH_BANDS[k][0]) return k; return DEPTH_BANDS.length - 1; };
+  const my = la => Math.log(Math.tan(Math.PI / 4 + la * Math.PI / 360));
+  // 지도(메르카토르)에 맞게 줄마다 위도를 다시 계산해서 그림
+  function paint(nx, nyRows, north, south, west, east, rowOf, colOf, colorIdx, alpha) {
+    const W = nx, top = my(north), bot = my(south), H = Math.round(W * (top - bot) / ((east - west) * Math.PI / 180));
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const ctx = cv.getContext('2d'), img = ctx.createImageData(W, H), px = img.data;
+    for (let y = 0; y < H; y++) {
+      const la = Math.atan(Math.sinh(top - (top - bot) * (y + 0.5) / H)) * 180 / Math.PI, gy = rowOf(la);
+      if (gy < 0 || gy >= nyRows) continue;
+      for (let x = 0; x < W; x++) {
+        const k = colorIdx(gy, colOf(x)); if (k < 0) continue;
+        const o = (y * W + x) * 4, c = rgb[k]; px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; px[o + 3] = alpha;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return new Promise(res => cv.toBlob(b => res(URL.createObjectURL(b))));
+  }
+  setTimeout(async () => {
+    const lutE = new Int8Array(256).map((_, v) => v ? band(v) : -1);
+    const fineHas = FINE ? (la, lo) => { const i = Math.floor((FINE.north - la) * FINE.res), j = Math.floor((lo - FINE.west) * FINE.res); return i >= 0 && j >= 0 && i < FINE.ny && j < FINE.nx && fineGrid[i * FINE.nx + j] > 0; } : () => false;
+    const urlE = await paint(DEP.nx, DEP.ny, DEP.north, DEP.south, DEP.west, DEP.east, la => Math.floor((DEP.north - la) * 240), x => x,
+      (gy, gx) => { const k = lutE[depthGrid[gy * DEP.nx + gx]]; if (k < 0) return -1; if (FINE && fineHas(DEP.north - (gy + 0.5) / 240, DEP.west + (gx + 0.5) / 240)) return -1; return k; }, 150);
+    depthLayer.addLayer(L.imageOverlay(urlE, [[DEP.south, DEP.west], [DEP.north, DEP.east]], {pane: 'chart', interactive: false}));
+    // 국립해양조사원 150m 격자를 그 위에 덧그림 (같은 색 띠, 더 자세함)
+    if (FINE) {
+      const off = FINE.off || 0, lutF = new Int8Array(65536).map((_, v) => v ? band(v / 10 - off) : -1);
+      const urlF = await paint(FINE.nx, FINE.ny, FINE.north, FINE.south, FINE.west, FINE.east, la => Math.floor((FINE.north - la) * FINE.res), x => x,
+        (gy, gx) => lutF[fineGrid[gy * FINE.nx + gx]], 175);
+      depthLayer.addLayer(L.imageOverlay(urlF, [[FINE.south, FINE.west], [FINE.north, FINE.east]], {pane: 'chart', interactive: false}));
+    }
+    window.__depthPainted = performance.now();
+  }, 30);
+  depthLayer.on('add', () => legend.style.display = ''); depthLayer.on('remove', () => legend.style.display = 'none');
+  overlays['<b>대략 수심</b> (색 띠)'] = depthLayer;
+  // 범례
+  const legend = L.DomUtil.create('div'); legend.style.cssText = 'position:absolute;z-index:800;left:10px;bottom:34px;background:rgba(255,255,255,.92);padding:6px 8px;border-radius:6px;font-size:11px;line-height:1.5;box-shadow:0 1px 5px rgba(0,0,0,.3)';
+  let lo = 0; legend.innerHTML = '<b style="cursor:pointer" class="lgHead">대략 수심 ▾</b> <span class="lgSub">(평균해면 기준)</span><div class="lgBody">' + DEPTH_BANDS.map(([d, c]) => { const t = d === 0 ? '갯벌 (평균해면 위)' : d > 1e8 ? `${lo}m~` : `${lo}~${d}m`; lo = d; return `<span style="display:inline-block;width:14px;height:10px;background:${c};border:1px solid #999;vertical-align:middle"></span> ${t}`; }).join('<br>')
+    + '<br><span style="color:#c62828">썰물 땐 더 얕음 (인천 조차 약 8~9m)</span></div>';
+  legend.id = 'depthLegend';
+  map.getContainer().appendChild(legend); L.DomEvent.disableClickPropagation(legend);
+  // 핸드폰에선 접어 두고, 제목을 누르면 펼침
+  const lgBody = legend.querySelector('.lgBody'), small = matchMedia('(max-width: 700px)').matches;
+  if (small) { lgBody.style.display = 'none'; legend.querySelector('.lgSub').style.display = 'none'; }
+  legend.querySelector('.lgHead').onclick = () => { lgBody.style.display = lgBody.style.display === 'none' ? '' : 'none'; };
+  depthLayer.addTo(map);
+}
+for (const [name, L0] of Object.entries(CHART)) {
+  const grp = L.layerGroup(), c = L0.color;
+  for (const f of L0.f) {
+    const o = {renderer: chartRenderer, pane: 'chart', interactive: false};
+    if (L0.kind === 'point') f.g.forEach(part => part.forEach(p => L.circleMarker(p, {...o, radius: 4, color: '#000', weight: 1, fillColor: c, fillOpacity: .9}).addTo(grp)));
+    else if (L0.kind === 'line') L.polyline(f.g, {...o, color: c, weight: name === '해저케이블' ? 2.5 : 2, dashArray: name === '해저케이블' ? '8 5' : null, opacity: .9}).addTo(grp);
+    else L.polygon(f.g, {...o, color: c, weight: 1.5, fillColor: c, fillOpacity: name === '낚시금지구역' ? .25 : .1, dashArray: name === '항만구역' ? '6 4' : null}).addTo(grp);
+  }
+  chartLayers[name] = grp;
+  overlays[`<span style="display:inline-block;width:12px;height:${L0.kind === 'line' ? 3 : 10}px;background:${c};vertical-align:middle;margin-right:3px"></span>${name} (${L0.f.length})`] = grp;
+  if (CHART_ON.includes(name)) grp.addTo(map);
+}
+L.control.layers({'위성': sat, '일반지도': osm}, overlays, {position: 'topright'}).addTo(map);
+// 빈 곳 클릭 → 그 자리에 걸친 해도 정보
+function chartHits(latlng) {
+  const pt = map.latLngToContainerPoint(latlng), hits = [];
+  const segDist = (p, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy; let t = L2 ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / L2 : 0; t = Math.max(0, Math.min(1, t)); return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy); };
+  const inPoly = (ll, ring) => { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [yi, xi] = ring[i], [yj, xj] = ring[j]; if ((yi > ll.lat) !== (yj > ll.lat) && ll.lng < (xj - xi) * (ll.lat - yi) / (yj - yi) + xi) c = !c; } return c; };
+  for (const [name, L0] of Object.entries(CHART)) {
+    if (!map.hasLayer(chartLayers[name])) continue;
+    for (const f of L0.f) {
+      let hit = false;
+      if (L0.kind === 'area') hit = f.g.filter(r => inPoly(latlng, r)).length % 2 === 1;
+      else for (const part of f.g) {
+        const P = part.map(p => map.latLngToContainerPoint(p));
+        if (L0.kind === 'point' ? P.some(q => q.distanceTo(pt) < 8) : P.some((q, k) => k && segDist(pt, P[k - 1], q) < 6)) { hit = true; break; }
+      }
+      if (hit) hits.push({name, f});
+    }
+  }
+  return hits;
+}
+map.on('click', e => {
+  if (drawing || selMode) return;
+  const hits = chartHits(e.latlng), d = depthAt(e.latlng.lat, e.latlng.lng); if (!hits.length && d == null) return;
+  const uniq = [...new Map(hits.map(h => [h.name + '|' + h.f.n + '|' + h.f.i, h])).values()].slice(0, 6);
+  L.popup({maxWidth: 320}).setLatLng(e.latlng).setContent(depthLine(d) + uniq.map(h =>
+    `<div style="margin-bottom:6px"><b style="color:${CHART[h.name].color === '#ffea00' ? '#b8860b' : CHART[h.name].color}">${esc(h.name)}</b>${h.f.n ? ' · ' + esc(h.f.n) : ''}${h.f.i ? `<br><span style="font-size:12px">${esc(h.f.i)}</span>` : ''}</div>`).join('')
+    + `<div style="font-size:11px;color:#888">${uniq.length ? '출처: 국립해양조사원 전자해도 · ' : ''}참고용, 항해용 아님</div>`).openOn(map);
+});
+function depthLine(d) {
+  if (d == null) return '';
+  const src = lastDepthSrc, withTide = tideAt(tideMsNow()) != null;
+  return `<div style="margin-bottom:6px"><b>${depthNowText(d)}</b> <span style="font-size:11px;color:#666">(${src}${withTide ? ` · 물높이는 ${tide.port} 기준 예측, ${tideFollowNow ? '지금' : hm(tideMs)}` : ' · 평균해면 기준, 썰물 땐 더 얕음'})</span></div>`;
+}
+function depthText(d) {
+  if (d <= 0) return `갯벌 · 평균해면보다 ${(-d).toFixed(1)}m 높음 (썰물 때 드러남)`;
+  return `수심 약 ${d < 10 ? d.toFixed(1) : Math.round(d)}m`;
+}
+L.control.scale({imperial: false}).addTo(map);
+
+const wpLayer = L.layerGroup().addTo(map), trailLayer = L.layerGroup().addTo(map), routeLayer = L.layerGroup().addTo(map), draftLayer = L.layerGroup().addTo(map);
+const markers = [];
+DATA.wps.forEach((w, i) => {
+  const [g, name, desc, lat, lon, latD, lonD, latM, lonM, date] = w;
+  const m = L.circleMarker([lat, lon], {renderer, radius: 5, color: '#000', weight: 1, fillColor: COLORS[g] || '#ccc', fillOpacity: .9});
+  m.bindTooltip(name, {direction: 'top', offset: [0, -4]});
+  m.on('click', e => { L.DomEvent.stop(e); if (drawing) addDraft([lat, lon], DATA.wps[i][1], i); else if (selMode) { if (Date.now() - boxEndAt > 300) toggleSel(i); } else wpPopup(i); });
+  markers.push(m);
+});
+function wpPopup(i) {
+  const [g, name, desc, lat, lon, latD, lonD, latM, lonM, date] = DATA.wps[i];
+  L.popup().setLatLng([lat, lon]).setContent(`<div class="pop">
+    <div style="display:flex;gap:4px"><input id="popName" value="${esc(name)}" style="flex:1;font:inherit;font-weight:bold;padding:2px 4px" onkeydown="if(event.key==='Enter'){renameWp(${i},this.value);map.closePopup()}">
+    <button onclick="renameWp(${i},document.getElementById('popName').value);map.closePopup()">이름 저장</button></div>
+    ${desc ? esc(desc) : ''}<table>
+    <tr><td>도분초</td><td>${latD} ${lonD}</td></tr><tr><td>도-분</td><td>${latM} ${lonM}</td></tr>
+    <tr><td>십진</td><td>${lat.toFixed(7)}, ${lon.toFixed(7)}</td></tr>${(d => d == null ? '' : `<tr><td>수심</td><td style="font-family:inherit">${depthNowText(d).replace('수심 ', '')} <span style="font-size:11px;color:#666">(${lastDepthSrc})</span></td></tr>`)(depthAt(lat, lon))}</table>${date ? '생성 ' + date + '<br>' : ''}
+    <button onclick="startFrom(${i})">여기서 항로 시작</button> <button class="dan" onclick="delWp(${i})">포인트 삭제</button></div>`).openOn(map);
+}
+function delWp(i) { delWps([i]); }
+function delWps(ids) {
+  ids = ids.filter(i => !S.deleted.includes(i)); if (!ids.length) return;
+  S.deleted.push(...ids); S.lastBatch = ids; ids.forEach(i => SEL.delete(i));
+  map.closePopup(); save(); renderGroups(); if (dupGroup) computeDups(); renderWps(); renderStat(); renderSel();
+  toast(ids.length === 1 ? `${DATA.wps[ids[0]][1]} 삭제됨 (아래 '삭제한 웨이포인트'에서 되살릴 수 있음)` : `웨이포인트 ${ids.length}개 삭제됨 ([마지막 삭제 취소]로 한 번에 되살릴 수 있음)`);
+}
+
+// ---------- 여러 개 선택 ----------
+let selMode = false; const SEL = new Set();
+const selRect = L.layerGroup().addTo(map);
+function styleMarker(i) { markers[i].setStyle(SEL.has(i) ? {color: '#fff', weight: 3, radius: 7} : {color: '#000', weight: 1, radius: 5}); }
+function renderSel() {
+  document.getElementById('selN').textContent = SEL.size;
+  document.getElementById('selDel').textContent = '선택한 것 삭제'; document.getElementById('selDel').dataset.arm = '';
+  document.getElementById('selActions').style.display = selMode ? 'flex' : 'none';
+  document.getElementById('selHelp').style.display = selMode ? '' : 'none';
+  document.getElementById('selBar').classList.toggle('on', selMode);
+  document.querySelectorAll('#res .row[data-i]').forEach(r => { const c = r.querySelector('.selChk'); if (c) c.checked = SEL.has(+r.dataset.i); });
+}
+function toggleSel(i) { SEL.has(i) ? SEL.delete(i) : SEL.add(i); styleMarker(i); renderSel(); }
+function setSelMode(on) {
+  selMode = on; document.getElementById('selMode').checked = on;
+  if (on && drawing) setDrawing(false);
+  if (!on) { const old = [...SEL]; SEL.clear(); old.forEach(styleMarker); }
+  on ? map.dragging.disable() : map.dragging.enable();
+  map.getContainer().style.cursor = on ? 'crosshair' : '';
+  renderSel(); renderWpList();
+}
+document.getElementById('selMode').onchange = e => setSelMode(e.target.checked);
+document.getElementById('selClear').onclick = () => { const old = [...SEL]; SEL.clear(); old.forEach(styleMarker); renderSel(); };
+document.getElementById('selView').onclick = () => {
+  const b = map.getBounds(); DATA.wps.forEach((w, i) => { if (visibleWp(i) && b.contains([w[3], w[4]]) && !SEL.has(i)) { SEL.add(i); styleMarker(i); } }); renderSel();
+};
+document.getElementById('selDel').onclick = e => {
+  if (!SEL.size) { toast('선택된 웨이포인트가 없습니다'); return; }
+  const btn = e.target;
+  if (btn.dataset.arm !== '1') { btn.dataset.arm = '1'; btn.textContent = `한 번 더 누르면 ${SEL.size}개 삭제`; setTimeout(() => { if (btn.dataset.arm === '1') renderSel(); }, 3000); return; }
+  delWps([...SEL]);
+};
+// 드래그로 네모 그려서 선택 (선택 모드일 때만)
+// (지도 라이브러리는 버튼을 누른 채 움직일 때 mousemove를 안 넘겨줘서 화면 이벤트를 직접 받음)
+let boxStart = null, boxShape = null, boxEndAt = 0;
+map.getContainer().addEventListener('mousedown', e => {
+  if (!selMode || e.button !== 0 || e.target.closest('.leaflet-control')) return;
+  boxStart = {pt: map.mouseEventToContainerPoint(e), ll: map.mouseEventToLatLng(e)}; e.preventDefault();
+});
+document.addEventListener('mousemove', e => {
+  if (!boxStart) return;
+  const a = boxStart.pt, c = map.mouseEventToContainerPoint(e);
+  if (!boxShape && Math.abs(a.x - c.x) + Math.abs(a.y - c.y) < 6) return;
+  const bnd = L.latLngBounds(boxStart.ll, map.mouseEventToLatLng(e));
+  boxShape ? boxShape.setBounds(bnd) : (boxShape = L.rectangle(bnd, {color: '#c62828', weight: 2, dashArray: '6 4', fillOpacity: .08, interactive: false}).addTo(selRect));
+});
+const endBox = e => {
+  // 손을 뗀 위치까지 네모로 잡음 (마우스를 빨리 움직여 중간 움직임이 안 잡혀도 동작)
+  const c = e && map.mouseEventToContainerPoint(e), a = boxStart && boxStart.pt;
+  const bnd = c && a && Math.abs(a.x - c.x) + Math.abs(a.y - c.y) >= 6 ? L.latLngBounds(boxStart.ll, map.mouseEventToLatLng(e)) : boxShape && boxShape.getBounds();
+  if (bnd) {
+    const b = bnd; let n = 0;
+    DATA.wps.forEach((w, i) => { if (visibleWp(i) && b.contains([w[3], w[4]]) && !SEL.has(i)) { SEL.add(i); styleMarker(i); n++; } });
+    selRect.clearLayers(); boxShape = null; renderSel(); toast(`${n}개 추가 선택 (모두 ${SEL.size}개)`);
+    boxEndAt = Date.now(); // 손 뗀 자리의 점이 '클릭'으로 다시 해제되지 않게
+  }
+  boxStart = null;
+};
+document.addEventListener('mouseup', e => { if (boxStart) endBox(e); }, true);
+function restoreWp(ids) {
+  S.deleted = S.deleted.filter(i => !ids.includes(i));
+  save(); renderGroups(); if (dupGroup) computeDups(); renderWps(); renderStat();
+  toast(ids.length === 1 ? `${DATA.wps[ids[0]][1]} 되살림` : `웨이포인트 ${ids.length}개 되살림`);
+}
+const hiddenGroups = new Set();
+const LBL_MAX = 250, lblLayer = L.layerGroup().addTo(map); // 화면 안 포인트가 이 수 이하일 때만 이름 표시 (겹침 방지)
+// ---------- 중복 찾기: dupGroup[i] = 그룹 번호 (중복이 아니면 없음) ----------
+let dupGroup = null;
+function computeDups() {
+  const mode = document.getElementById('dupMode').value;
+  document.getElementById('dupMWrap').style.display = mode === 'pos' ? '' : 'none';
+  if (!mode) { dupGroup = null; document.getElementById('dupInfo').textContent = ''; return; }
+  const live = DATA.wps.map((w, i) => i).filter(i => !S.deleted.includes(i));
+  const parent = new Map(live.map(i => [i, i]));
+  const find = i => { while (parent.get(i) !== i) { parent.set(i, parent.get(parent.get(i))); i = parent.get(i); } return i; };
+  const join = (a, b) => parent.set(find(a), find(b));
+  if (mode === 'name') {
+    const first = new Map();
+    for (const i of live) { const n = DATA.wps[i][1].trim().toLowerCase(); first.has(n) ? join(i, first.get(n)) : first.set(n, i); }
+  } else {
+    const m = Math.max(0.1, +document.getElementById('dupM').value || 5), cs = m / 111000 * 2; // 격자 칸 크기(도)
+    const grid = new Map();
+    for (const i of live) {
+      const w = DATA.wps[i], gx = Math.floor(w[3] / cs), gy = Math.floor(w[4] / cs);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++)
+        for (const j of grid.get(`${gx + a},${gy + b}`) || []) if (hav([w[3], w[4]], [DATA.wps[j][3], DATA.wps[j][4]]) <= m) join(i, j);
+      const k = `${gx},${gy}`; grid.has(k) ? grid.get(k).push(i) : grid.set(k, [i]);
+    }
+  }
+  const groups = new Map();
+  for (const i of live) { const r = find(i); groups.has(r) ? groups.get(r).push(i) : groups.set(r, [i]); }
+  dupGroup = new Map(); let g = 0, pts = 0;
+  for (const ids of groups.values()) if (ids.length > 1) { g++; pts += ids.length; ids.forEach(i => dupGroup.set(i, g)); }
+  document.getElementById('dupInfo').textContent = g ? `중복 ${g}묶음 · 포인트 ${pts}개 (같은 묶음끼리 목록에 모아 보여줌)` : '중복이 없습니다';
+}
+const visibleWp = i => !S.deleted.includes(i) && !hiddenGroups.has(DATA.wps[i][0]) && (!dupGroup || dupGroup.has(i));
+function renderWps() {
+  wpLayer.clearLayers();
+  markers.forEach((m, i) => { if (visibleWp(i)) m.addTo(wpLayer); });
+  renderLabels(); renderWpList();
+}
+function renderLabels() {
+  lblLayer.clearLayers();
+  const info = document.getElementById('lblInfo');
+  if (!document.getElementById('lblOn').checked) { info.textContent = ''; return; }
+  const b = map.getBounds(), inView = DATA.wps.map((w, i) => i).filter(i => visibleWp(i) && b.contains([DATA.wps[i][3], DATA.wps[i][4]]));
+  // 겹치지 않는 이름만 표시 (화면 픽셀 기준으로 자리 잡기)
+  const boxes = [], shown = [];
+  for (const i of inView) {
+    if (shown.length >= LBL_MAX) break;
+    const w = DATA.wps[i], p = map.latLngToContainerPoint([w[3], w[4]]);
+    const bx = {x1: p.x + 5, y1: p.y - 9, x2: p.x + 5 + w[1].length * 6.6 + 8, y2: p.y + 9};
+    if (boxes.some(o => bx.x1 < o.x2 && bx.x2 > o.x1 && bx.y1 < o.y2 && bx.y2 > o.y1)) continue;
+    boxes.push(bx); shown.push(i);
+  }
+  info.style.color = inView.length ? '' : '#c62828';
+  info.textContent = !inView.length ? '· 지금 화면에는 포인트가 없음 → [전체 보기]를 누르세요' : shown.length === inView.length ? `· ${shown.length}개 표시 중` : `· 화면 ${inView.length.toLocaleString()}개 중 ${shown.length}개 표시 (겹치는 이름은 확대하면 보임)`;
+  shown.forEach(i => {
+    const w = DATA.wps[i];
+    L.marker([w[3], w[4]], {interactive: false, icon: L.divIcon({className: '', html: `<span class="rlabel" style="font-weight:normal">${esc(w[1])}</span>`, iconAnchor: [-7, 8]})}).addTo(lblLayer);
+  });
+}
+function renderGroups() {
+  const box = document.getElementById('wpGroups'); box.innerHTML = '';
+  for (const g of Object.keys(COLORS)) {
+    const n = DATA.wps.filter((w, i) => w[0] === g && !S.deleted.includes(i)).length;
+    const l = document.createElement('label'); l.style.display = 'block';
+    l.innerHTML = `<input type="checkbox" ${hiddenGroups.has(g) ? '' : 'checked'}> <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${COLORS[g]};border:1px solid #000"></span> ${g.replace('_', ' ')} (${n.toLocaleString()})`;
+    l.querySelector('input').onchange = e => { e.target.checked ? hiddenGroups.delete(g) : hiddenGroups.add(g); renderWps(); };
+    box.appendChild(l);
+  }
+  document.getElementById('wpCount').textContent = `총 ${(DATA.wps.length - S.deleted.length).toLocaleString()}개`;
+  // 삭제한 웨이포인트 되살리기
+  const db = document.getElementById('wpDelBox'); db.innerHTML = '';
+  if (S.deleted.length) {
+    db.style.cssText = 'background:#fff4f4;border:1px solid #f3c2c2;border-radius:6px;padding:6px 8px;margin:6px 0';
+    db.innerHTML = `<div style="display:flex;gap:6px;align-items:center"><b style="flex:1;color:#c62828">삭제한 웨이포인트 ${S.deleted.length}개</b>
+      <button class="x" data-a="undo">마지막 삭제 취소</button><button class="x pri" data-a="all">모두 되살리기</button></div>
+      <div style="max-height:130px;overflow:auto;margin-top:4px"></div>`;
+    const list = db.lastElementChild;
+    [...S.deleted].reverse().forEach(i => {
+      const w = DATA.wps[i], r = document.createElement('div'); r.className = 'row';
+      r.innerHTML = `<span class="nm">${esc(w[1])} <span class="meta">${w[5]} ${w[6]}</span></span><button class="x">되살리기</button>`;
+      r.querySelector('button').onclick = () => restoreWp([i]);
+      list.appendChild(r);
+    });
+    db.querySelector('[data-a=undo]').onclick = () => {
+      const lb = (S.lastBatch || []).filter(i => S.deleted.includes(i));
+      S.lastBatch = null; restoreWp(lb.length ? lb : [S.deleted[S.deleted.length - 1]]);
+    };
+    db.querySelector('[data-a=all]').onclick = () => restoreWp([...S.deleted]);
+  } else db.style.cssText = '';
+}
+function wpRow(i) {
+  const w = DATA.wps[i], el = document.createElement('div'); el.className = 'row'; el.dataset.i = i;
+  el.innerHTML = `${selMode ? `<input type="checkbox" class="selChk" ${SEL.has(i) ? 'checked' : ''} title="선택">` : ''}<span style="width:9px;height:9px;border-radius:50%;flex:none;background:${COLORS[w[0]]};border:1px solid #000"></span>
+    <span style="flex:1;min-width:0;display:flex;flex-direction:column"><input type="text" value="${esc(w[1])}" title="클릭해서 이름 수정 (${esc(w[2])})"><span class="meta" style="padding-left:5px">${w[5]} ${w[6]}</span></span>
+    <button class="x" data-a="see">보기</button><button class="x dan" data-a="del">삭제</button>`;
+  el.querySelector('[data-a=see]').onclick = () => { map.setView([w[3], w[4]], Math.max(map.getZoom(), 15)); if (drawing) addDraft([w[3], w[4]], w[1], i); else wpPopup(i); };
+  el.querySelector('[data-a=del]').onclick = () => delWp(i);
+  el.querySelector('.selChk')?.addEventListener('change', () => toggleSel(i));
+  el.querySelector('input[type=text]').onchange = e => { renameWp(i, e.target.value); e.target.value = DATA.wps[i][1]; };
+  return el;
+}
+function renderWpList() {
+  const s = document.getElementById('q').value.trim().toLowerCase(), res = document.getElementById('res'); res.innerHTML = '';
+  const b = map.getBounds(), MAX = dupGroup ? 600 : 150; let n = 0, total = 0, lastG = null;
+  let order = DATA.wps.map((w, i) => i);
+  if (dupGroup) order = [...dupGroup.keys()].sort((a, c) => dupGroup.get(a) - dupGroup.get(c) || a - c);
+  for (const i of order) {
+    const w = DATA.wps[i];
+    if (!visibleWp(i)) continue;
+    if (s ? !(w[1] + ' ' + w[2]).toLowerCase().includes(s) : (!dupGroup && !b.contains([w[3], w[4]]))) continue;
+    total++; if (n++ >= MAX) continue;
+    const row = wpRow(i);
+    if (dupGroup) {
+      const g = dupGroup.get(i);
+      if (g !== lastG) row.style.borderTop = '2px solid #c62828';
+      lastG = g;
+      row.querySelector('.meta').insertAdjacentHTML('afterbegin', `<b style="color:#c62828">묶음 ${g}</b> · `);
+    }
+    res.appendChild(row);
+  }
+  const head = document.createElement('div'); head.className = 'stat'; head.style.padding = '4px 0';
+  head.textContent = (s ? `검색 결과 ${total}개` : dupGroup ? `중복 포인트 ${total}개 (화면 밖 포함)` : `지금 화면 안 ${total.toLocaleString()}개`) + (total > MAX ? ` (앞 ${MAX}개만 표시 · 확대하면 줄어듦)` : '');
+  res.prepend(head);
+}
+map.on('moveend', () => { renderLabels(); if (!document.getElementById('q').value.trim()) renderWpList(); });
+
+// ---------- 항적 ----------
+const trailLines = DATA.trails.map(([name, when, pts], i) =>
+  L.polyline(pts, {renderer, weight: pts.length >= BIG ? 3 : 2, opacity: .9}).bindTooltip(trTip(i), {sticky: true}));
+function renderTrails() {
+  trailLayer.clearLayers();
+  const box = document.getElementById('trails'); box.innerHTML = '';
+  const order = DATA.trails.map((t, i) => i).sort((a, b) => DATA.trails[b][2].length - DATA.trails[a][2].length);
+  for (const i of order) {
+    if (!liveTrail(i)) continue;
+    const [name, when, pts] = DATA.trails[i], on = S.trailOn[i], big = pts.length >= BIG;
+    trailLines[i].setStyle({color: on ? (big ? '#ff6a00' : '#ffa94d') : '#9e9e9e', dashArray: on ? null : '4 6', opacity: on ? .9 : .5}).addTo(trailLayer);
+    const r = document.createElement('div'); r.className = 'row' + (big ? ' big' : '');
+    r.innerHTML = `<input type="checkbox" ${on ? 'checked' : ''} title="어탐기로 보내기"><input type="text" value="${esc(name)}" placeholder="(이름없음)" title="클릭해서 이름 수정">
+      <span class="meta">${pts.length.toLocaleString()}점</span><button class="x" data-a="see">보기</button><button class="x" data-a="conv">항로로</button><button class="x dan" data-a="del">삭제</button>`;
+    r.querySelector('[data-a=del]').onclick = () => delTrail(i);
+    r.querySelector('input[type=checkbox]').onchange = e => { S.trailOn[i] = e.target.checked; save(); renderTrails(); renderStat(); };
+    r.querySelector('input[type=text]').onchange = e => renameTrail(i, e.target.value);
+    r.querySelector('[data-a=see]').onclick = () => map.fitBounds(trailLines[i].getBounds(), {padding: [30, 30]});
+    r.querySelector('[data-a=conv]').onclick = () => convTrail(i);
+    box.appendChild(r);
+  }
+  if (S.trailDel.length) {
+    const r = document.createElement('div'); r.className = 'row stat';
+    r.innerHTML = `<span class="nm">삭제한 항적 ${S.trailDel.length}개</span><button class="x" data-a="undo">마지막 삭제 취소</button><button class="x" data-a="all">모두 되살리기</button>`;
+    r.querySelector('[data-a=undo]').onclick = () => { const i = S.trailDel.pop(); save(); renderTrails(); renderStat(); toast(`${DATA.trails[i][0] || '(이름없음)'} 되살림`); };
+    r.querySelector('[data-a=all]').onclick = () => { S.trailDel = []; save(); renderTrails(); renderStat(); toast('삭제한 항적 모두 되살림'); };
+    box.appendChild(r);
+  }
+  const live = DATA.trails.map((t, i) => i).filter(liveTrail), n = live.length, on = live.filter(i => S.trailOn[i]).length, all = document.getElementById('trAll');
+  all.checked = n > 0 && on === n; all.indeterminate = on > 0 && on < n;
+  document.getElementById('trAllInfo').textContent = `${on}/${n}개 선택`;
+}
+function delTrail(i) {
+  if (!S.trailDel.includes(i)) S.trailDel.push(i);
+  save(); renderTrails(); renderStat(); toast(`항적 "${DATA.trails[i][0] || '(이름없음)'}" 삭제됨 · 목록 맨 아래에서 되살릴 수 있음`);
+}
+function setTrails(fn) { DATA.trails.forEach((t, i) => { if (liveTrail(i)) S.trailOn[i] = fn(t); }); save(); renderTrails(); renderStat(); }
+document.getElementById('trAll').onchange = e => {
+  const v = e.target.checked;
+  setTrails(() => v);
+  if (v && DATA.trails.some(t => t[2].length >= BIG)) toast('큰 항적(약 2만 점)도 선택됨 · 어탐기가 다시 느려질 수 있음');
+};
+document.getElementById('trSmall').onclick = () => setTrails(t => t[2].length < BIG);
+function convTrail(i) {
+  const [name, when, pts] = DATA.trails[i], tol = Math.max(5, +document.getElementById('tol').value || 100);
+  let s = simplify(pts, tol), t = tol;
+  while (s.length > 100) { t *= 1.5; s = simplify(pts, t); } // 로렌스 항로 최대 점 수 고려
+  const pre = 'R' + (S.seq++);
+  S.routes.push({name: (name || 'TRAIL') + ' R', pts: s.map((p, k) => ({lat: p[0], lon: p[1], name: `${pre}-${String(k + 1).padStart(2, '0')}`}))});
+  S.trailOn[i] = false; save(); renderAll();
+  toast(`${pts.length.toLocaleString()}점 → ${s.length}점 항로로 변환 (허용오차 ${Math.round(t)}m). 원본 항적은 전송 제외됨`);
+}
+
+// ---------- 항로 ----------
+const RCOL = ['#00e676', '#40c4ff', '#e040fb', '#ffff00', '#ff5252', '#64ffda'];
+function renderRoutes() {
+  routeLayer.clearLayers();
+  const box = document.getElementById('routes');
+  box.innerHTML = S.routes.length ? '' : '<div class="stat">아직 항로가 없습니다. [+ 새 항로 그리기]를 누르고 웨이포인트 두 개를 클릭하세요.</div>';
+  const q = document.getElementById('rtQ').value.trim().toLowerCase();
+  S.routes.forEach((r, i) => {
+    const ll = r.pts.map(p => [p.lat, p.lon]), col = RCOL[i % RCOL.length];
+    if (!r.hidden) {
+      L.polyline(ll, {color: '#000', weight: 6, opacity: .5}).addTo(routeLayer);
+      L.polyline(ll, {color: col, weight: 3}).bindTooltip(r.name, {sticky: true}).addTo(routeLayer);
+      r.pts.forEach(p => L.circleMarker([p.lat, p.lon], {radius: 4, color: '#000', weight: 1, fillColor: col, fillOpacity: 1, interactive: false}).addTo(routeLayer));
+    }
+    if (q && !r.name.toLowerCase().includes(q)) return;
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = `<input type="checkbox" ${r.hidden ? '' : 'checked'} title="지도에 표시"><span style="width:10px;height:10px;background:${col};border-radius:2px;flex:none"></span><input type="text" value="${esc(r.name)}">
+      <span class="meta">${r.pts.length}점 · ${km(pathLen(ll))}</span><button class="x" data-a="see">보기</button><button class="x dan" data-a="del">삭제</button>`;
+    row.querySelector('input[type=checkbox]').onchange = e => { r.hidden = !e.target.checked; save(); renderRoutes(); };
+    row.querySelector('input[type=text]').onchange = e => { r.name = e.target.value.trim() || r.name; save(); renderRoutes(); };
+    row.querySelector('[data-a=see]').onclick = () => {
+      if (r.hidden) { r.hidden = false; save(); renderRoutes(); }
+      map.fitBounds(L.latLngBounds(ll), {padding: [40, 40], maxZoom: 15});
+    };
+    row.querySelector('[data-a=del]').onclick = () => { S.routes.splice(i, 1); save(); renderAll(); };
+    box.appendChild(row);
+  });
+  if (q && !box.children.length) box.innerHTML = '<div class="stat">찾는 이름의 항로가 없습니다.</div>';
+  // 전체 선택 상태 (검색 중이면 검색된 항로 기준)
+  const list = S.routes.filter(r => !q || r.name.toLowerCase().includes(q)), on = list.filter(r => !r.hidden).length, all = document.getElementById('rtAll');
+  all.checked = list.length > 0 && on === list.length; all.indeterminate = on > 0 && on < list.length;
+  document.getElementById('rtAllInfo').textContent = `${on}/${list.length}개 표시` + (q ? ' (검색 결과)' : '');
+  document.getElementById('rtHead').style.display = S.routes.length ? '' : 'none';
+  document.getElementById('rtQ').style.display = S.routes.length ? '' : 'none';
+}
+document.getElementById('rtAll').onchange = e => {
+  const q = document.getElementById('rtQ').value.trim().toLowerCase();
+  S.routes.forEach(r => { if (!q || r.name.toLowerCase().includes(q)) r.hidden = !e.target.checked; });
+  save(); renderRoutes();
+};
+document.getElementById('rtQ').addEventListener('input', renderRoutes);
+document.getElementById('rtFit').onclick = () => {
+  const pts = S.routes.filter(r => !r.hidden).flatMap(r => r.pts.map(p => [p.lat, p.lon]));
+  if (pts.length) map.fitBounds(L.latLngBounds(pts), {padding: [40, 40], maxZoom: 15}); else toast('표시 중인 항로가 없습니다');
+};
+
+// ---------- 항로 그리기 ----------
+let drawing = false, draft = [];
+const btnNew = document.getElementById('btnNew'), modeBox = document.getElementById('mode');
+function setDrawing(on) {
+  if (on && selMode) setSelMode(false); // 항로 그리기와 여러 개 선택은 동시에 안 씀
+  drawing = on; draft = []; draftLayer.clearLayers(); modeBox.classList.toggle('on', on); btnNew.disabled = on;
+  map.getContainer().style.cursor = on ? 'crosshair' : '';
+  document.getElementById('draftName').value = ''; renderDraft();
+}
+function startFrom(i) { map.closePopup(); setDrawing(true); const w = DATA.wps[i]; addDraft([w[3], w[4]], w[1], i); }
+function addDraft(ll, name, wpIdx) { draft.push({lat: ll[0], lon: ll[1], name: name || `WP${draft.length + 1}`, wp: wpIdx ?? null}); renderDraft(); }
+function renderDraft() {
+  draftLayer.clearLayers();
+  const ll = draft.map(p => [p.lat, p.lon]);
+  if (ll.length > 1) L.polyline(ll, {color: '#fff', weight: 3, dashArray: '8 6'}).addTo(draftLayer);
+  draft.forEach((p, k) => L.marker([p.lat, p.lon], {interactive: false, icon: L.divIcon({className: '', html: `<span class="rlabel">${k + 1}. ${esc(p.name)}</span>`, iconAnchor: [-6, 8]})}).addTo(draftLayer));
+  const info = document.getElementById('draftInfo');
+  info.innerHTML = draft.length ? draft.map((p, k) => `${k + 1}. ${esc(p.name)}`).join(' → ') + (ll.length > 1 ? `<br>거리 <b>${km(pathLen(ll))}</b>` : '') : '첫 번째 웨이포인트를 클릭하세요.';
+  document.getElementById('btnDone').disabled = draft.length < 2;
+  document.getElementById('btnUndo').disabled = !draft.length;
+  if (draft.length >= 2 && !document.getElementById('draftName').dataset.touched)
+    document.getElementById('draftName').placeholder = `${draft[0].name} → ${draft[draft.length - 1].name}`;
+}
+map.on('click', e => { if (drawing) addDraft([e.latlng.lat, e.latlng.lng], null, null); });
+btnNew.onclick = () => setDrawing(true);
+document.getElementById('btnCancel').onclick = () => setDrawing(false);
+document.getElementById('btnUndo').onclick = () => { draft.pop(); renderDraft(); };
+document.getElementById('btnDone').onclick = () => {
+  if (draft.length < 2) return;
+  const nm = document.getElementById('draftName').value.trim() || `${draft[0].name}-${draft[draft.length - 1].name}`;
+  const pre = 'R' + (S.seq++); let k = 0;
+  const pts = draft.map(p => ({lat: p.lat, lon: p.lon, name: p.wp == null ? `${pre}-${String(++k).padStart(2, '0')}` : p.name}));
+  S.routes.push({name: nm, pts}); save(); setDrawing(false); renderAll(); toast(`항로 "${nm}" 추가됨`);
+};
+document.addEventListener('keydown', e => {
+  if (!drawing || e.target.tagName === 'INPUT') return;
+  if (e.key === 'Escape') setDrawing(false);
+  if (e.key === 'Backspace') { draft.pop(); renderDraft(); }
+  if (e.key === 'Enter') document.getElementById('btnDone').click();
+});
+
+// ---------- 통계 / 저장 ----------
+function counts() {
+  const wps = DATA.wps.length - S.deleted.length;
+  const trails = DATA.trails.filter((t, i) => sendTrail(i));
+  const tp = trails.reduce((s, t) => s + t[2].length, 0), rp = S.routes.reduce((s, r) => s + r.pts.length, 0);
+  return {wps, trails: trails.length, tp, routes: S.routes.length, rp};
+}
+const ORIG_TP = DATA.trails.reduce((s, t) => s + t[2].length, 0);
+function renderStat() {
+  const c = counts();
+  document.getElementById('stat').innerHTML = `어탐기로 보낼 것: 웨이포인트 <b>${c.wps.toLocaleString()}</b>개 · 항로 <b>${c.routes}</b>개(${c.rp}점) · 항적 <b>${c.trails}</b>개(<b>${c.tp.toLocaleString()}</b>점)<br>
+    항적 점 수: 원본 ${ORIG_TP.toLocaleString()} → <b>${c.tp.toLocaleString()}</b>${c.tp < ORIG_TP ? ` (${Math.round(100 - c.tp / ORIG_TP * 100)}% 감소)` : ''}`;
+}
+function renderAll() { renderGroups(); renderWps();renderTrails(); renderRoutes(); renderStat(); }
+
+const x = s => esc(s).slice(0, 200);
+// allTrails: 합치기용. 체크를 꺼 둔 항적도 (삭제만 안 했으면) 넣음
+function buildGpx(allTrails) {
+  const del = new Set(S.deleted); let g = '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="lowrance-route-editor" xmlns="http://www.topografix.com/GPX/1/1">\n';
+  DATA.wps.forEach((w, i) => { if (!del.has(i)) g += `<wpt lat="${w[3].toFixed(7)}" lon="${w[4].toFixed(7)}"><name>${x(w[1])}</name>${w[2] ? `<desc>${x(w[2])}</desc>` : ''}</wpt>\n`; });
+  S.routes.forEach(r => { g += `<rte><name>${x(r.name)}</name>\n`; r.pts.forEach(p => g += `<rtept lat="${p.lat.toFixed(7)}" lon="${p.lon.toFixed(7)}"><name>${x(p.name)}</name></rtept>\n`); g += '</rte>\n'; });
+  DATA.trails.forEach((t, i) => { if (!(allTrails ? liveTrail(i) : sendTrail(i))) return; g += `<trk><name>${x(t[0])}</name><trkseg>`; t[2].forEach(p => g += `<trkpt lat="${p[0].toFixed(7)}" lon="${p[1].toFixed(7)}"/>`); g += '</trkseg></trk>\n'; });
+  return g + '</gpx>\n';
+}
+// ---------- 파일 열기 (.usr / .gpx) ----------
+document.getElementById('baseInfo').innerHTML = BASE
+  ? `열린 파일: <b>${esc(BASE.name)}</b>` + (BASE.prev ? ` · <a href="#" id="unMerge">합치기 전으로 되돌리기</a>` : '')
+    + (BASE.warn ? `<br><span style="color:#c62828">${esc(BASE.warn)}</span>` : '')
+  : '<span style="color:#c62828">아직 연 파일이 없습니다 → [파일 열기]</span>';
+document.getElementById('unMerge')?.addEventListener('click', async e => {
+  e.preventDefault(); await kvSet('base', BASE.prev); location.reload();
+});
+
+// ---------- 파일 추가 (합치기): 지금 상태(수정 포함) + 새 파일 → 새 작업 파일 ----------
+async function readAsGpx(f) {
+  if (/\.usr$/i.test(f.name)) { const r = usrToGpx(await f.arrayBuffer()); return {gpx: r.gpx, warn: r.warn.join(' ')}; }
+  return {gpx: await f.text(), warn: ''};
+}
+const near = (a, b) => hav(a, b) < 1; // 1m 안이면 같은 자리
+async function mergeFile(f) {
+  if (!f) return;
+  if (!BASE) return openFile(f);
+  let add, warn;
+  try { const r = await readAsGpx(f); warn = r.warn; add = parseGpx(r.gpx); } catch (er) { toast(`합치기 실패: ${er.message}`); return; }
+  const cur = parseGpx(buildGpx(true), true); // 지금 화면의 수정 내용 그대로
+  const skip = {wps: 0, routes: 0, trails: 0};
+  // 이름도 같고 자리도 같은 것은 중복이라 건너뜀 (같은 파일을 두 번 합쳐도 안전)
+  const wKey = new Map(); cur.wps.forEach(w => { const k = w[1].trim().toLowerCase(); (wKey.get(k) || wKey.set(k, []).get(k)).push([w[3], w[4]]); });
+  const wps = add.wps.filter(w => { const same = (wKey.get(w[1].trim().toLowerCase()) || []).some(p => near(p, [w[3], w[4]])); if (same) skip.wps++; return !same; });
+  const sameLine = (a, b) => a.length === b.length && a.every((p, k) => near(p, b[k]));
+  const rll = r => r.pts.map(p => [p.lat, p.lon]);
+  let seq = nextSeq(cur.routes) - 1;
+  const routes = add.routes.filter(r => { const same = cur.routes.some(c => c.name === r.name && sameLine(rll(c), rll(r))); if (same) skip.routes++; return !same; })
+    .map(r => { seq++; let k = 0; return {name: r.name, pts: r.pts.map(p => ({...p, name: /^R\d+-\d+$/.test(p.name) ? `R${seq}-${String(++k).padStart(2, '0')}` : p.name}))}; });
+  const trails = add.trails.filter(t => { const same = cur.trails.some(c => c[0] === t[0] && sameLine(c[2], t[2])); if (same) skip.trails++; return !same; });
+  if (!wps.length && !routes.length && !trails.length) { toast(`${f.name}의 내용은 모두 이미 들어 있습니다 (새로 더할 것 없음)`); return; }
+  const all = {wps: [...cur.wps, ...wps], routes: [...cur.routes, ...routes], trails: [...cur.trails, ...trails]};
+  const gpx = gpxText(all);
+  try { await kvSet('base', {name: `${BASE.name} + ${f.name}`, gpx, warn: [BASE.warn, warn].filter(Boolean).join(' '), prev: {name: BASE.name, gpx: BASE.gpx, warn: BASE.warn}}); }
+  catch (er) { toast('합친 결과를 브라우저에 보관하지 못했습니다'); return; }
+  const sk = skip.wps + skip.routes + skip.trails;
+  toast(`${f.name} 합치는 중… 웨이포인트 +${wps.length} · 항로 +${routes.length} · 항적 +${trails.length}` + (sk ? ` (이미 있는 것 ${sk}개는 건너뜀)` : ''));
+  setTimeout(() => location.reload(), 1200);
+}
+function gpxText(d) {
+  let g = '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="lowrance-route-editor" xmlns="http://www.topografix.com/GPX/1/1">\n';
+  d.wps.forEach(w => g += `<wpt lat="${w[3].toFixed(7)}" lon="${w[4].toFixed(7)}"><name>${x(w[1])}</name>${w[2] ? `<desc>${x(w[2])}</desc>` : ''}</wpt>\n`);
+  d.routes.forEach(r => { g += `<rte><name>${x(r.name)}</name>\n`; r.pts.forEach(p => g += `<rtept lat="${p.lat.toFixed(7)}" lon="${p.lon.toFixed(7)}"><name>${x(p.name)}</name></rtept>\n`); g += '</rte>\n'; });
+  d.trails.forEach(t => { g += `<trk><name>${x(t[0])}</name><trkseg>`; t[2].forEach(p => g += `<trkpt lat="${p[0].toFixed(7)}" lon="${p[1].toFixed(7)}"/>`); g += '</trkseg></trk>\n'; });
+  return g + '</gpx>\n';
+}
+const btnMerge = document.getElementById('btnMerge');
+btnMerge.style.display = BASE ? '' : 'none';
+btnMerge.onclick = () => document.getElementById('fileIn2').click();
+document.getElementById('fileIn2').onchange = e => { const f = e.target.files[0]; e.target.value = ''; mergeFile(f); };
+// 파일이 열려 있을 때 끌어다 놓으면: 합칠지 새로 열지 물어봄
+let pendingDrop = null;
+const dropChoice = document.getElementById('dropChoice');
+function askDrop(f) { pendingDrop = f; document.getElementById('dcName').textContent = f.name; dropChoice.style.display = 'flex'; }
+document.getElementById('dcMerge').onclick = () => { dropChoice.style.display = 'none'; mergeFile(pendingDrop); };
+document.getElementById('dcOpen').onclick = () => { dropChoice.style.display = 'none'; openFile(pendingDrop); };
+document.getElementById('dcCancel').onclick = () => { dropChoice.style.display = 'none'; pendingDrop = null; };
+document.getElementById('empty').style.display = BASE ? 'none' : 'flex';
+async function openFile(f) {
+  if (!f) return;
+  let gpx, warn = '';
+  try {
+    if (/\.usr$/i.test(f.name)) { const r = usrToGpx(await f.arrayBuffer()); gpx = r.gpx; warn = r.warn.join(' '); }
+    else gpx = await f.text();
+    var d = parseGpx(gpx);
+  } catch (er) { toast(`열기 실패: ${er.message}`); return; }
+  try { await kvSet('base', {name: f.name, gpx, warn}); }
+  catch (er) { toast('파일을 브라우저에 보관하지 못했습니다'); return; }
+  toast(`${f.name} 여는 중… (웨이포인트 ${d.wps.length} · 항로 ${d.routes.length} · 항적 ${d.trails.length})`);
+  setTimeout(() => location.reload(), 600);
+}
+document.getElementById('btnLoad').onclick = document.getElementById('btnLoad2').onclick = () => document.getElementById('fileIn').click();
+// 파일 닫기: 지도를 비우고 빈 화면으로. 편집 내용은 그 파일별로 남아 있어서 같은 파일을 다시 열면 이어서 작업됨
+const btnClose = document.getElementById('btnClose');
+btnClose.style.display = BASE ? '' : 'none';
+btnClose.onclick = async () => {
+  if (btnClose.dataset.arm !== '1') {
+    btnClose.dataset.arm = '1'; btnClose.textContent = '한 번 더 누르면 닫기'; btnClose.classList.add('dan');
+    toast('저장 안 한 수정이 있으면 먼저 [어탐기용 GPX 저장]을 누르세요');
+    setTimeout(() => { btnClose.dataset.arm = ''; btnClose.textContent = '파일 닫기'; btnClose.classList.remove('dan'); }, 3000);
+    return;
+  }
+  try { await idb('readwrite', s => s.delete('base')); } catch (e) {}
+  location.reload();
+};
+document.getElementById('fileIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) BASE ? askDrop(f) : openFile(f); };
+// 끌어다 놓기
+const dropHint = document.getElementById('dropHint'); let dragN = 0;
+const isFileDrag = e => [...(e.dataTransfer?.types || [])].includes('Files');
+addEventListener('dragenter', e => { if (isFileDrag(e)) { dragN++; dropHint.style.display = 'flex'; } });
+addEventListener('dragleave', e => { if (isFileDrag(e) && --dragN <= 0) { dragN = 0; dropHint.style.display = 'none'; } });
+addEventListener('dragover', e => { if (isFileDrag(e)) e.preventDefault(); });
+addEventListener('drop', e => { if (!isFileDrag(e)) return; e.preventDefault(); dragN = 0; dropHint.style.display = 'none'; const f = e.dataTransfer.files[0]; if (f) BASE ? askDrop(f) : openFile(f); });
+
+// ---------- 저장 폴더 (한 번 고른 폴더를 기억해서 거기에 바로 저장) ----------
+const WANT_DIR = 'Area Point';
+const canPickDir = 'showDirectoryPicker' in window;
+const getDir = () => kvGet('saveDir').catch(() => null);
+const setDir = h => kvSet('saveDir', h);
+async function showSaveDir() {
+  const el = document.getElementById('saveDirInfo');
+  if (!canPickDir) { el.textContent = '저장 위치: 다운로드 폴더 (이 브라우저는 폴더 지정을 지원하지 않음)'; return; }
+  const h = await getDir();
+  el.innerHTML = h ? `저장 폴더: <b>${esc(h.name)}</b> · <a href="#" id="chDir">폴더 바꾸기</a>`
+                   : `저장 폴더: 아직 안 정함 · 처음 저장할 때 <b>${WANT_DIR}</b> 폴더를 고르세요`;
+  document.getElementById('chDir')?.addEventListener('click', async e => { e.preventDefault(); await pickDir(); });
+}
+async function pickDir() {
+  toast(`폴더 선택 창에서 C:\\Pratice\\항로\\${WANT_DIR} 폴더를 고르세요`);
+  let h;
+  try { h = await showDirectoryPicker({id: 'areapoint', mode: 'readwrite'}); } catch (e) { return null; } // 취소
+  if (h.name !== WANT_DIR) toast(`"${h.name}" 폴더로 정했습니다 (${WANT_DIR}가 아님)`);
+  await setDir(h); await showSaveDir(); return h;
+}
+function stampName() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return `어탐기용_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.gpx`;
+}
+function downloadGpx(g, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([g], {type: 'application/gpx+xml'})); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+showSaveDir();
+
+document.getElementById('btnExport').onclick = async () => {
+  const g = buildGpx(), name = stampName();
+  if (!canPickDir) { downloadGpx(g, name); toast(`${name} 저장됨 (다운로드 폴더)`); return; }
+  let h = await getDir();
+  if (h && (await h.queryPermission({mode: 'readwrite'})) !== 'granted' && (await h.requestPermission({mode: 'readwrite'})) !== 'granted') h = null;
+  if (!h) h = await pickDir();
+  if (!h) { toast('저장 취소됨'); return; }
+  try {
+    const fh = await h.getFileHandle(name, {create: true}), w = await fh.createWritable();
+    await w.write(new Blob([g], {type: 'application/gpx+xml'})); await w.close();
+    toast(`${h.name}\\${name} 저장됨`);
+  } catch (e) { downloadGpx(g, name); toast(`폴더에 저장 못 해서 다운로드 폴더에 저장함 (${e.message})`); }
+};
+document.getElementById('btnReset').onclick = e => {
+  if (e.target.dataset.arm !== '1') { e.target.dataset.arm = '1'; e.target.textContent = '한 번 더 누르면 초기화'; setTimeout(() => { e.target.dataset.arm = ''; e.target.textContent = '편집 초기화'; }, 3000); return; }
+  setSelMode(false);
+  S = freshState(); DATA.trails.forEach((t, i) => S.trailOn[i] = t[2].length < BIG);
+  applyNames(); markers.forEach((m, i) => m.setTooltipContent(DATA.wps[i][1])); trailLines.forEach((l, i) => l.setTooltipContent(trTip(i)));
+  e.target.dataset.arm = ''; e.target.textContent = '편집 초기화'; save(); setDrawing(false); renderAll(); toast('편집 내용 초기화됨');
+};
+
+// ---------- 검색 / 커서 좌표 ----------
+document.getElementById('q').addEventListener('input', renderWpList);
+function onDupChange() {
+  computeDups(); renderWps();
+  if (dupGroup && dupGroup.size) map.fitBounds(L.latLngBounds([...dupGroup.keys()].map(i => [DATA.wps[i][3], DATA.wps[i][4]])), {padding: [30, 30]});
+}
+document.getElementById('dupMode').addEventListener('change', onDupChange);
+document.getElementById('dupM').addEventListener('change', onDupChange);
+document.getElementById('lblOn').addEventListener('change', renderLabels);
+const cur = document.getElementById('cur');
+// ---------- 물때 (국립해양조사원 TideBED 예측 조위) ----------
+// 지도 가운데 좌표의 예측 조위를 받아, '평균해면에서 몇 m 높은지/낮은지'로 바꿔 씀 → 수심(평균해면 기준)에 더하면 '그 시각 수심'
+// 키: PC에서는 api_key.js, 핸드폰(인터넷 주소)에서는 [설정]에 넣은 값(이 기기에만 저장)
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const TIDE_KEY = (window.API_KEYS && window.API_KEYS.datagokr) || lsGet('datagokrKey');
+document.getElementById('keyIn').placeholder = TIDE_KEY ? '저장된 키 있음 (바꾸려면 새로 붙여넣기)' : '인증키 붙여넣기';
+document.getElementById('keySave').onclick = () => {
+  const v = document.getElementById('keyIn').value.trim(); if (!v) return;
+  try { localStorage.setItem('datagokrKey', v); } catch (e) {} location.reload();
+};
+document.getElementById('keyDel').onclick = () => { try { localStorage.removeItem('datagokrKey'); } catch (e) {} location.reload(); };
+if (!TIDE_KEY) document.getElementById('setBox').open = true;
+const tideCache = new Map(); let tide = null; // tide = {port, josi, pts:[[ms, 평균해면 대비 m]], ext:[[ms, m, '만조'|'간조']]}
+const ymd = d => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+const hm = ms => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+async function fetchTideDay(lat, lon, day) {
+  lat = Math.round(lat * 10) / 10; lon = Math.round(lon * 10) / 10; // 약 10km 단위로 묶어서 호출 수를 줄임 (물때는 이 정도 거리에선 거의 같음)
+  const key = `${lat},${lon},${day}`;
+  if (tideCache.has(key)) return tideCache.get(key);
+  const p = (async () => {
+    const u = `https://apis.data.go.kr/1192136/tidebed/GetTidebedApiService?serviceKey=${encodeURIComponent(TIDE_KEY)}&type=json&lat=${lat.toFixed(4)}&lot=${lon.toFixed(4)}&reqDate=${day}&min=10&numOfRows=300`;
+    const j = await (await fetch(u)).json();
+    if (j.header.resultCode !== '00') throw new Error(j.header.resultMsg);
+    let it = j.body.items && j.body.items.item || []; if (!Array.isArray(it)) it = [it];
+    if (!it.length) throw new Error('이 위치는 예측 조위 자료가 없습니다');
+    const jogo = +it[0].jogo, msl = +it[0].msl * jogo; // 선택 지점의 평균해면 (기준면 위 cm)
+    return {port: it[0].obsvtrNm, josi: it[0].josi, pts: it.map(r => [Date.parse(r.slctdDt.replace(' ', 'T') + ':00+09:00'), (+r.slctdHgt - msl) / 100])};
+  })();
+  tideCache.set(key, p); p.catch(() => tideCache.delete(key));
+  return p;
+}
+function tideAt(ms) { // 시각의 물높이 (평균해면 대비 m), 보간
+  if (!tide) return null; const P = tide.pts;
+  for (let k = 1; k < P.length; k++) if (P[k][0] >= ms) { const [t0, h0] = P[k - 1], [t1, h1] = P[k]; return ms < t0 ? null : h0 + (h1 - h0) * (ms - t0) / (t1 - t0); }
+  return null;
+}
+const tdTime = document.getElementById('tdTime'), tideBox = document.getElementById('tideBox');
+const toLocalInput = ms => { const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
+let tideMs = Date.now(), tideFollowNow = true;
+const tideMsNow = () => tideFollowNow ? Date.now() : tideMs;
+async function loadTide() {
+  if (!TIDE_KEY) return;
+  tideBox.style.display = 'block';
+  const c = map.getCenter(), t = tideMsNow(), d = new Date(t), d0 = new Date(t - 864e5), d1 = new Date(t + 864e5);
+  document.getElementById('tdMain').textContent = '불러오는 중…';
+  try {
+    const days = await Promise.all([d0, d, d1].map(x => fetchTideDay(c.lat, c.lng, ymd(x))));
+    const pts = days.flatMap(x => x.pts).sort((a, b) => a[0] - b[0]);
+    const ext = []; for (let k = 1; k < pts.length - 1; k++) { const [a, b, e] = [pts[k - 1][1], pts[k][1], pts[k + 1][1]]; if (b > a && b >= e) ext.push([pts[k][0], b, '만조']); if (b < a && b <= e) ext.push([pts[k][0], b, '간조']); }
+    tide = {port: days[1].port, josi: days[1].josi, pts, ext};
+  } catch (er) { tide = null; document.getElementById('tdMain').innerHTML = `<span style="color:#c62828">물때를 못 받았습니다: ${esc(er.message)}</span>`; return; }
+  renderTide();
+}
+function renderTide() {
+  if (!tide) return;
+  const t = tideMsNow(), h = tideAt(t), h2 = tideAt(t + 6e5);
+  document.getElementById('tdPort').textContent = `기준항 ${tide.port} (시간차 ${tide.josi})`;
+  if (!tideFollowNow) tdTime.value = toLocalInput(t); else tdTime.value = toLocalInput(Date.now());
+  document.getElementById('tdMain').innerHTML = h == null ? '이 시각 자료 없음' :
+    `물높이 <span class="big">${h >= 0 ? '+' : ''}${h.toFixed(1)}m</span> (평균해면 대비) · ${h2 > h ? '⬆ 들물' : '⬇ 날물'}`
+    + ` <span class="stat tdNote">→ 수심 표시에 반영됨</span>`;
+  // 오늘 만조·간조
+  const day0 = new Date(t); day0.setHours(0, 0, 0, 0); const dayE = tide.ext.filter(([ms]) => ms >= +day0 && ms < +day0 + 864e5);
+  document.getElementById('tdExt').textContent = dayE.map(([ms, v, k]) => `${k} ${hm(ms)} (${v >= 0 ? '+' : ''}${v.toFixed(1)}m)`).join(' · ');
+  // 24시간 그래프
+  const svg = document.getElementById('tdChart'), W = 330, H = 56, P = tide.pts.filter(([ms]) => ms >= +day0 && ms <= +day0 + 864e5);
+  if (P.length > 1) {
+    const mx = Math.max(...P.map(p => Math.abs(p[1])), 1), X = ms => (ms - day0) / 864e5 * W, Y = v => H / 2 - v / mx * (H / 2 - 4);
+    const line = P.map(([ms, v], k) => `${k ? 'L' : 'M'}${X(ms).toFixed(1)},${Y(v).toFixed(1)}`).join('');
+    svg.innerHTML = `<rect width="${W}" height="${H}" fill="#eef7fb"/><line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" stroke="#9bb" stroke-dasharray="3 3"/>`
+      + [6, 12, 18].map(hr => `<line x1="${W * hr / 24}" x2="${W * hr / 24}" y1="0" y2="${H}" stroke="#dde"/><text x="${W * hr / 24 + 2}" y="${H - 2}" font-size="9" fill="#889">${hr}시</text>`).join('')
+      + `<path d="${line}" fill="none" stroke="#0a66d8" stroke-width="2"/>`
+      + (h != null ? `<line x1="${X(t)}" x2="${X(t)}" y1="0" y2="${H}" stroke="#c62828" stroke-width="1.5"/><circle cx="${X(t)}" cy="${Y(h)}" r="3.5" fill="#c62828"/>` : '');
+  }
+  if (typeof updateGpsInfo === 'function') updateGpsInfo();
+}
+// 물때 상자 접기/펼치기 (핸드폰에선 처음에 접힘: 물높이 한 줄만)
+const tdMore = document.getElementById('tdMore'), tdTimeWrap = document.getElementById('tdTimeWrap'), tdPortEl = document.getElementById('tdPort');
+function tideFold(fold) { tdMore.style.display = tdTimeWrap.style.display = tdPortEl.style.display = fold ? 'none' : ''; document.getElementById('tdHead').textContent = fold ? '물때 ▸' : '물때 ▾'; }
+document.getElementById('tdHead').onclick = () => tideFold(tdMore.style.display !== 'none');
+if (matchMedia('(max-width: 700px)').matches) tideFold(true);
+if (TIDE_KEY) {
+  tdTime.addEventListener('change', () => { const v = Date.parse(tdTime.value); if (!isNaN(v)) { tideFollowNow = false; tideMs = v; loadTide(); } });
+  document.getElementById('tdNow').onclick = () => { tideFollowNow = true; loadTide(); };
+  let tdTimer; map.on('moveend', () => { clearTimeout(tdTimer); tdTimer = setTimeout(loadTide, 600); });
+  setInterval(() => { if (tideFollowNow) renderTide(); }, 60000);
+  setTimeout(loadTide, 800);
+}
+// ---------- 핸드폰 메뉴 ----------
+const sideEl = document.getElementById('side');
+document.getElementById('menuBtn').onclick = () => sideEl.classList.add('open');
+document.getElementById('sideClose').onclick = () => sideEl.classList.remove('open');
+
+// ---------- GPS: 내 위치에 보트 표시 ----------
+// 📍 누르면 시작 + 따라가기. 지도를 손으로 끌면 따라가기만 멈춤(버튼 점선), 다시 📍 누르면 다시 따라감
+let gpsWatch = null, boat = null, accCircle = null, follow = true, lastFix = null, lastHeading = 0, wakeLock = null;
+const gpsBtn = document.getElementById('gpsBtn'), gpsInfo = document.getElementById('gpsInfo'), gpsTxt = document.getElementById('gpsTxt');
+const BOAT_SVG = `<svg width="36" height="36" viewBox="0 0 36 36"><path d="M18 2 C24 9 25 18 24 33 L12 33 C11 18 12 9 18 2 Z" fill="#ff6d00" stroke="#fff" stroke-width="2"/><rect x="14" y="17" width="8" height="8" rx="1.5" fill="#fff"/><circle cx="18" cy="8" r="1.8" fill="#fff"/></svg>`;
+function bearing(a, b) { const r = Math.PI / 180, y = Math.sin((b[1] - a[1]) * r) * Math.cos(b[0] * r), x = Math.cos(a[0] * r) * Math.sin(b[0] * r) - Math.sin(a[0] * r) * Math.cos(b[0] * r) * Math.cos((b[1] - a[1]) * r); return (Math.atan2(y, x) / r + 360) % 360; }
+async function keepScreenOn() { try { if ('wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {} }
+document.addEventListener('visibilitychange', () => { if (gpsWatch != null && document.visibilityState === 'visible') keepScreenOn(); });
+function onFix(pos) {
+  const c = pos.coords, ll = [c.latitude, c.longitude], t = pos.timestamp;
+  let kn = c.speed != null && !isNaN(c.speed) ? c.speed * 1.94384 : null, hd = c.heading != null && !isNaN(c.heading) ? c.heading : null;
+  if (lastFix) {
+    const dist = hav(lastFix.ll, ll), dt = (t - lastFix.t) / 1000;
+    if (kn == null && dt > 0) kn = dist / dt * 1.94384;
+    if (hd == null && dist > 5) hd = bearing(lastFix.ll, ll); // GPS가 방향을 안 주면 움직인 방향으로
+  }
+  if (hd != null && (kn == null || kn > 0.5)) lastHeading = hd;
+  if (!lastFix || hav(lastFix.ll, ll) > 5 || t - lastFix.t > 10000) lastFix = {ll, t};
+  if (!boat) {
+    boat = L.marker(ll, {icon: L.divIcon({className: 'boat', html: BOAT_SVG, iconSize: [36, 36], iconAnchor: [18, 18]}), zIndexOffset: 1000, interactive: false}).addTo(map);
+    accCircle = L.circle(ll, {radius: c.accuracy, color: '#ff6d00', weight: 1, fillOpacity: .08, interactive: false}).addTo(map);
+    map.setView(ll, Math.max(map.getZoom(), 13), {animate: false}); // (움직이며 확대하면 다음 따라가기와 부딪혀 확대가 취소됨)
+  } else if (follow) map.panTo(ll, {animate: true});
+  boat.setLatLng(ll); accCircle.setLatLng(ll).setRadius(c.accuracy);
+  const svg = boat.getElement() && boat.getElement().querySelector('svg'); if (svg) svg.style.transform = `rotate(${lastHeading}deg)`;
+  lastGps = {ll, kn, acc: c.accuracy}; updateGpsInfo();
+}
+let lastGps = null;
+function updateGpsInfo() { // 물때가 나중에 도착해도 다시 계산되게 따로 둠
+  if (!lastGps || gpsWatch == null) return;
+  const {ll, kn} = lastGps, d = depthAt(ll[0], ll[1]), h = tideAt(Date.now());
+  const dTxt = d == null ? '' : (h == null ? (d <= 0 ? ' · 갯벌' : ` · 수심 약 ${d < 10 ? d.toFixed(1) : Math.round(d)}m`) : (d + h <= 0 ? ' · 지금 드러남(갯벌)' : ` · 지금 수심 약 ${d + h < 10 ? (d + h).toFixed(1) : Math.round(d + h)}m`));
+  gpsTxt.textContent = `⛵ ${kn == null ? '-' : kn.toFixed(1)}kn · ${Math.round(lastHeading)}°${dTxt} · ±${Math.round(lastGps.acc)}m`;
+}
+function onGpsErr(e) {
+  const why = e.code === 1 ? '위치 권한이 꺼져 있습니다. 주소창 왼쪽 자물쇠 → 권한 → 위치 "허용"으로 바꾼 뒤 다시 누르세요.'
+    : e.code === 2 ? '위치를 못 잡았습니다 (GPS 신호 약함). 휴대폰 위치(GPS)가 켜져 있는지 확인하세요.' : '위치 응답이 늦습니다. 잠시 기다려 주세요.';
+  gpsTxt.textContent = '⚠ ' + why; gpsInfo.style.display = 'block';
+  if (e.code === 1) stopGps(true);
+}
+function startGps() {
+  if (!('geolocation' in navigator)) { toast('이 브라우저는 위치 기능이 없습니다'); return; }
+  if (!window.isSecureContext) { toast('위치는 https 주소에서만 됩니다 (GitHub Pages 주소로 여세요)'); return; }
+  follow = true; gpsBtn.classList.add('on'); gpsBtn.classList.remove('nofollow'); gpsInfo.style.display = 'block'; gpsTxt.textContent = '위치 찾는 중…';
+  gpsWatch = navigator.geolocation.watchPosition(onFix, onGpsErr, {enableHighAccuracy: true, maximumAge: 2000, timeout: 20000});
+  keepScreenOn();
+}
+function stopGps(keepMsg) {
+  if (gpsWatch != null) navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null;
+  if (boat) { map.removeLayer(boat); map.removeLayer(accCircle); boat = accCircle = null; } lastFix = null;
+  gpsBtn.classList.remove('on', 'nofollow'); if (!keepMsg) gpsInfo.style.display = 'none';
+  try { wakeLock && wakeLock.release(); } catch (e) {} wakeLock = null;
+}
+gpsBtn.onclick = () => {
+  if (gpsWatch == null) return startGps();
+  follow = true; gpsBtn.classList.remove('nofollow'); if (boat) map.panTo(boat.getLatLng());
+};
+document.getElementById('gpsOff').onclick = () => stopGps();
+map.on('dragstart', () => { if (gpsWatch != null && follow) { follow = false; gpsBtn.classList.add('nofollow'); } });
+
+// 수심 + 물높이 = 그 시각 수심
+const whenWord = () => { if (tideFollowNow) return '지금'; const d = new Date(tideMs); return `${d.getMonth() + 1}/${d.getDate()} ${hm(tideMs)}`; };
+function depthNowText(d) {
+  const h = tideAt(tideMsNow());
+  if (d == null) return '';
+  if (h == null) return depthText(d);
+  const now = d + h, w = whenWord();
+  return now <= 0 ? `${w} 드러남 (갯벌) · 평균 ${d <= 0 ? '갯벌' : d.toFixed(1) + 'm'}` : `${w} 약 ${now < 10 ? now.toFixed(1) : Math.round(now)}m (평균 ${d <= 0 ? '갯벌' : (d < 10 ? d.toFixed(1) : Math.round(d)) + 'm'}, 물높이 ${h >= 0 ? '+' : ''}${h.toFixed(1)}m)`;
+}
+
+map.on('mousemove', e => {
+  const {lat, lng} = e.latlng, d = depthAt(lat, lng);
+  cur.textContent = `${dms(lat, 'N', 'S')} ${dms(lng, 'E', 'W')}  |  ${ddm(lat, 'N', 'S')} ${ddm(lng, 'E', 'W')}` + (d != null ? `  |  ${(() => { const h = tideAt(tideMsNow()); if (h == null) return d <= 0 ? `갯벌(평균해면 +${(-d).toFixed(1)}m)` : `수심 약 ${d < 10 ? d.toFixed(1) : Math.round(d)}m`; const n = d + h, w = whenWord(); return n <= 0 ? `${w} 드러남(갯벌)` : `${w} 약 ${n < 10 ? n.toFixed(1) : Math.round(n)}m (평균 ${d <= 0 ? '갯벌' : Math.round(d) + 'm'})`; })()} · ${lastDepthSrc.split(' ')[0]}` : '');
+});
+
+const ALL_PTS = DATA.wps.length ? DATA.wps.map(w => [w[3], w[4]])
+  : [...S.routes.flatMap(r => r.pts.map(p => [p.lat, p.lon])), ...DATA.trails.flatMap(t => t[2])];
+const fitAll = () => ALL_PTS.length ? map.fitBounds(L.latLngBounds(ALL_PTS), {padding: [20, 20]}) : map.setView([36.5, 127.8], 7);
+fitAll();
+renderAll();
+// 창이 숨겨진 상태로 열리면 지도 크기가 0이라 엉뚱한 곳을 보게 됨 → 크기가 잡히면 다시 맞춤
+let needRefit = map.getSize().x < 50 || map.getSize().y < 50;
+new ResizeObserver(() => {
+  map.invalidateSize();
+  if (needRefit && map.getSize().x >= 50 && map.getSize().y >= 50) { needRefit = false; fitAll(); }
+}).observe(map.getContainer());
+document.getElementById('btnFit').onclick = fitAll;
+</script>
+</body>
+</html>
