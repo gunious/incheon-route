@@ -68,6 +68,18 @@
   #gpsInfo { position: fixed; z-index: 1000; left: 50%; transform: translateX(-50%); bottom: 26px; background: rgba(10,61,98,.92); color: #fff; padding: 6px 10px; border-radius: 18px; font-size: 13px; display: none; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
   #gpsInfo .x { color: #fff; background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.4); margin-left: 4px; }
   .boat svg { transition: transform .4s; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+  #catchBtn { position: fixed; z-index: 1000; right: 12px; bottom: 152px; width: 52px; height: 52px; border-radius: 50%; font-size: 24px; padding: 0; background: #fff; border: 2px solid #ff8f00; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+  #gotoInfo { position: fixed; z-index: 1000; left: 50%; transform: translateX(-50%); bottom: 66px; background: rgba(110,70,0,.93); color: #fff; padding: 6px 10px; border-radius: 18px; font-size: 13px; display: none; align-items: center; gap: 6px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+  #gotoInfo .arr { display: inline-block; font-size: 17px; transition: transform .4s; }
+  #gotoInfo .x { color: #fff; background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.4); }
+  #catchDlg { position: fixed; inset: 0; z-index: 3001; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; }
+  #catchDlg > div { background: #fff; border-radius: 10px; padding: 14px 16px; width: min(440px, calc(100% - 16px)); max-height: 92%; overflow: auto; font-size: 14px; line-height: 1.6; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+  #catchDlg input { font: inherit; padding: 5px 6px; border: 1px solid #c5c5cc; border-radius: 5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 6px; }
+  .chips button { border-radius: 16px; padding: 6px 12px; font-size: 14px; }
+  .chips button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .fishm { font-size: 20px; line-height: 22px; text-align: center; text-shadow: 0 0 3px #fff, 0 0 3px #fff; position: relative; }
+  .fishm b { position: absolute; right: -9px; top: -7px; background: #ff8f00; color: #fff; font-size: 10px; line-height: 14px; border-radius: 7px; padding: 0 4px; text-shadow: none; }
   #sideClose, #menuBtn, #sheetBar { display: none; }
   /* 핸드폰: 지도를 꽉 채우고, 메뉴는 버튼으로 여닫음 */
   @media (max-width: 700px) {
@@ -92,6 +104,9 @@
     #depthLegend { bottom: 78px !important; font-size: 10px !important; padding: 4px 6px !important; }
     .tdNote { display: none; }
     #gpsInfo { bottom: 82px; font-size: 12px; max-width: calc(100% - 90px); white-space: normal; text-align: center; }
+    /* 가운데 정렬(left:50%)이면 폭이 화면 절반으로 묶여 여러 줄로 꺾임 → 왼쪽 끝~오른쪽 버튼 앞까지 펼침 */
+    #gotoInfo { bottom: 130px; left: 8px; right: 72px; transform: none; font-size: 12px; white-space: normal; justify-content: center; }
+    #gotoInfo .x { white-space: nowrap; flex: none; }
     .leaflet-control-layers { margin-top: 70px !important; }
     button { padding: 6px 10px; } .x { padding: 4px 8px; font-size: 12px; }
   }
@@ -141,6 +156,19 @@
         <button class="x pri" id="myTrkSave">GPX로 저장</button>
         <button class="x dan" id="myTrkDel">지우기</button>
       </div>
+    </div>
+    <div class="sec" id="catchSec">
+      <h2>조과 기록 <small id="catchInfo"></small></h2>
+      <div class="stat">🎣 버튼을 누르면 위치·시각·물때·수심이 같이 저장됩니다. 이 기기에만 저장되니 가끔 [CSV로 저장] 해 두세요.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center">
+        <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="catchShow" checked> 지도에 보기</label>
+        <select id="catchSpF" style="font:inherit;padding:2px"><option value="">전체 어종</option></select>
+        <button class="x pri" id="catchCsv">CSV로 저장</button>
+        <button class="x" id="catchGpx" title="어탐기에 웨이포인트로 넣을 수 있는 GPX">어탐기용 GPX</button>
+        <button class="x" id="catchImp" title="다른 기기에서 저장한 조과 CSV 합치기">불러오기</button><input type="file" id="catchFile" accept=".csv" hidden>
+      </div>
+      <div class="stat" id="catchSum" style="margin-top:4px"></div>
+      <div id="catchList" style="max-height:240px;overflow:auto"></div>
     </div>
     <div class="sec">
       <h2>항로 목록 <small>체크한 항로만 지도에 표시 (저장은 전부)</small></h2>
@@ -211,6 +239,19 @@
 <button id="menuBtn" class="pri">☰ 메뉴</button>
 <button id="gpsBtn" title="내 위치 (GPS)">📍</button>
 <div id="gpsInfo"><span id="gpsTxt"></span> <button class="x" id="gpsOff">GPS 끄기</button></div>
+<button id="catchBtn" title="조과 기록 (지금 위치에서 잡은 고기)">🎣</button>
+<div id="gotoInfo"><span class="arr" id="gotoArr">⬆</span><span id="gotoTxt"></span><button class="x" id="gotoOff">그만</button></div>
+<div id="catchDlg"><div>
+  <b>🎣 조과 기록</b>
+  <div class="chips" id="cdChips"></div>
+  <input id="cdSpIn" placeholder="목록에 없으면 어종 직접 입력" style="width:100%">
+  <div style="display:flex;gap:6px;align-items:center;margin-top:8px">마릿수
+    <button id="cdMinus" style="width:38px">−</button><input id="cdN" type="number" value="1" min="1" style="width:60px;text-align:center"><button id="cdPlus" style="width:38px">+</button></div>
+  <div style="display:flex;gap:6px;align-items:center;margin-top:6px">시각 <input id="cdTime" type="datetime-local"></div>
+  <input id="cdMemo" placeholder="메모 (채비·미끼·크기 등, 안 써도 됨)" style="width:100%;margin-top:6px">
+  <div class="stat" id="cdAuto" style="margin-top:6px"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button id="cdCancel">취소</button><button class="pri" id="cdSave" style="padding:6px 18px">기록</button></div>
+</div></div>
 <div id="tideBox">
   <div class="row1"><b id="tdHead" style="cursor:pointer">물때 ▾</b> <span id="tdPort" class="stat"></span>
     <span id="tdTimeWrap"><input type="datetime-local" id="tdTime"> <button class="x" id="tdNow">지금</button></span></div>
@@ -574,7 +615,8 @@ map.on('click', e => {
   const uniq = [...new Map(hits.map(h => [h.name + '|' + h.f.n + '|' + h.f.i, h])).values()].slice(0, 6);
   L.popup({maxWidth: 320}).setLatLng(e.latlng).setContent(depthLine(d) + uniq.map(h =>
     `<div style="margin-bottom:6px"><b style="color:${CHART[h.name].color === '#ffea00' ? '#b8860b' : CHART[h.name].color}">${esc(h.name)}</b>${h.f.n ? ' · ' + esc(h.f.n) : ''}${h.f.i ? `<br><span style="font-size:12px">${esc(h.f.i)}</span>` : ''}</div>`).join('')
-    + `<div style="font-size:11px;color:#888">${uniq.length ? '출처: 국립해양조사원 전자해도 · ' : ''}참고용, 항해용 아님</div>`).openOn(map);
+    + `<div style="font-size:11px;color:#888">${uniq.length ? '출처: 국립해양조사원 전자해도 · ' : ''}참고용, 항해용 아님</div>`
+    + `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px"><button onclick="setGoto(${e.latlng.lat},${e.latlng.lng},'고른 곳')">▶ 여기로 가기</button> <button onclick="openCatch(${e.latlng.lat},${e.latlng.lng})">🎣 여기 조과 기록</button></div>`).openOn(map);
 });
 function depthLine(d) {
   if (d == null) return '';
@@ -604,6 +646,7 @@ function wpPopup(i) {
     ${desc ? esc(desc) : ''}<table>
     <tr><td>도분초</td><td>${latD} ${lonD}</td></tr><tr><td>도-분</td><td>${latM} ${lonM}</td></tr>
     <tr><td>십진</td><td>${lat.toFixed(7)}, ${lon.toFixed(7)}</td></tr>${(d => d == null ? '' : `<tr><td>수심</td><td style="font-family:inherit">${depthNowText(d).replace('수심 ', '')} <span style="font-size:11px;color:#666">(${lastDepthSrc})</span></td></tr>`)(depthAt(lat, lon))}</table>${date ? '생성 ' + date + '<br>' : ''}
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px"><button class="pri" onclick="setGotoWp(${i})">▶ 여기로 가기</button> <button onclick="openCatch(${lat},${lon})">🎣 여기 조과 기록</button></div>
     <button onclick="startFrom(${i})">여기서 항로 시작</button> <button class="dan" onclick="delWp(${i})">포인트 삭제</button></div>`).openOn(map);
 }
 function delWp(i) { delWps([i]); }
@@ -1294,7 +1337,7 @@ function onFix(pos) {
   } else if (follow) map.panTo(ll, {animate: true});
   boat.setLatLng(ll); accCircle.setLatLng(ll).setRadius(c.accuracy);
   const svg = boat.getElement() && boat.getElement().querySelector('svg'); if (svg) svg.style.transform = `rotate(${lastHeading}deg)`;
-  lastGps = {ll, kn, acc: c.accuracy}; updateGpsInfo();
+  lastGps = {ll, kn, acc: c.accuracy}; updateGpsInfo(); gotoOnFix(kn);
 }
 let lastGps = null;
 function updateGpsInfo() { // 물때가 나중에 도착해도 다시 계산되게 따로 둠
@@ -1321,6 +1364,7 @@ function stopGps(keepMsg) {
   if (boat) { map.removeLayer(boat); map.removeLayer(accCircle); boat = accCircle = null; } lastFix = null;
   gpsBtn.classList.remove('on', 'nofollow'); if (!keepMsg) gpsInfo.style.display = 'none';
   try { wakeLock && wakeLock.release(); } catch (e) {} wakeLock = null;
+  lastGps = null; updateGoto();
 }
 gpsBtn.onclick = () => {
   if (gpsWatch == null) return startGps();
@@ -1329,8 +1373,204 @@ gpsBtn.onclick = () => {
 document.getElementById('gpsOff').onclick = () => stopGps();
 map.on('dragstart', () => { if (gpsWatch != null && follow) { follow = false; gpsBtn.classList.add('nofollow'); } });
 
+// ---------- 포인트로 가기: 내 배 → 목표까지 노란 점선 + 거리·방향·도착 예상 ----------
+// 목표는 이 기기에 기억 (창을 닫았다 열어도 이어짐). 30m 안에 들어오면 '도착' 알림 + 진동
+let gotoT = (() => { try { return JSON.parse(lsGet('gotoT')); } catch (e) { return null; } })(), gotoKmh = null;
+const gotoLine = L.polyline([], {color: '#ffd600', weight: 3, dashArray: '8 6', opacity: .95, interactive: false}).addTo(map);
+const gotoRing = L.circleMarker([0, 0], {radius: 13, color: '#ffd600', weight: 3, fill: false, interactive: false});
+const gotoInfo = document.getElementById('gotoInfo'), gotoTxt = document.getElementById('gotoTxt'), gotoArr = document.getElementById('gotoArr');
+const distTxt = m => m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(m < 10000 ? 2 : 1)}km`;
+function setGoto(lat, lon, name) {
+  gotoT = {lat, lon, name: name || '고른 곳'}; gotoKmh = null;
+  try { localStorage.setItem('gotoT', JSON.stringify(gotoT)); } catch (e) {}
+  map.closePopup(); sideEl.classList.remove('open');
+  if (gpsWatch == null) startGps();
+  updateGoto();
+}
+const setGotoWp = i => setGoto(DATA.wps[i][3], DATA.wps[i][4], DATA.wps[i][1]);
+function clearGoto() { gotoT = null; try { localStorage.removeItem('gotoT'); } catch (e) {} updateGoto(); }
+function gotoOnFix(kn) { // 속도는 들쭉날쭉해서 부드럽게 (도착 예상 시간이 덜 튐)
+  if (kn != null) { const v = kn * 1.852; gotoKmh = gotoKmh == null ? v : gotoKmh * .8 + v * .2; }
+  updateGoto();
+}
+function updateGoto() {
+  if (!gotoT) { gotoInfo.style.display = 'none'; gotoLine.setLatLngs([]); map.removeLayer(gotoRing); return; }
+  const T = [gotoT.lat, gotoT.lon];
+  gotoRing.setLatLng(T).addTo(map); gotoInfo.style.display = 'flex';
+  if (gpsWatch == null || !lastGps) { gotoLine.setLatLngs([]); gotoArr.style.display = 'none'; gotoTxt.textContent = `▶ ${gotoT.name} · 📍 GPS를 켜면 거리·방향이 나옵니다`; return; }
+  const ll = lastGps.ll, d = hav(ll, T), b = bearing(ll, T), moving = gotoKmh != null && gotoKmh > 2;
+  gotoLine.setLatLngs([ll, T]);
+  let dir = `${Math.round(b)}°`;
+  if (moving) { // 화살표 = 배 앞 기준 (위 = 똑바로)
+    const rel = ((b - lastHeading + 540) % 360) - 180;
+    dir += Math.abs(rel) < 10 ? ' · 똑바로' : ` · ${rel > 0 ? '오른쪽' : '왼쪽'} ${Math.round(Math.abs(rel))}°`;
+    gotoArr.style.transform = `rotate(${rel}deg)`; gotoArr.style.display = '';
+  } else gotoArr.style.display = 'none';
+  const eta = moving ? d / 1000 / gotoKmh * 60 : null;
+  const etaTxt = eta == null ? '' : ` · 약 ${eta < 60 ? Math.max(1, Math.round(eta)) + '분' : `${Math.floor(eta / 60)}시간 ${Math.round(eta % 60)}분`}`;
+  gotoTxt.textContent = `${gotoT.name} · ${distTxt(d)} · ${dir}${etaTxt}`;
+  if (d < 30 && !gotoT.arrived) { gotoT.arrived = true; toast(`도착: ${gotoT.name}`); try { navigator.vibrate && navigator.vibrate([300, 150, 300]); } catch (e) {} }
+  if (d > 60) gotoT.arrived = false;
+}
+document.getElementById('gotoOff').onclick = clearGoto;
+updateGoto();
+
+// ---------- 조과 기록: 🎣 → 어종·마릿수 → 위치·시각·물때·수심 자동 저장 (이 기기 브라우저 'catches') ----------
+const SP_DEFAULT = ['우럭', '광어', '노래미', '농어', '주꾸미', '갑오징어', '참돔', '도다리', '가자미', '대구', '열기', '문어'];
+let catches = [], cdPos = null, cdSp = '';
+const catchLayer = L.layerGroup().addTo(map), catchDlg = document.getElementById('catchDlg'), cdN = document.getElementById('cdN'), cdTime = document.getElementById('cdTime'), catchSpF = document.getElementById('catchSpF');
+const fmtT = (ms, yr) => { const d = new Date(ms); return `${yr ? d.getFullYear() + '/' : ''}${d.getMonth() + 1}/${d.getDate()} ${hm(ms)}`; };
+const fmtD = d => d <= 0 ? '갯벌' : (d < 10 ? d.toFixed(1) : Math.round(d)) + 'm';
+function tidePhase(ms) { // '간조 후 2시간 (들물)' — 낚시꾼이 말하는 방식. 물때 자료가 그 시각을 덮을 때만
+  if (!tide || tideAt(ms) == null) return '';
+  const prev = tide.ext.filter(e => e[0] <= ms).pop(); if (!prev) return '';
+  const hr = Math.round((ms - prev[0]) / 36e5 * 2) / 2, flow = prev[2] === '간조' ? '들물' : '날물';
+  return `${hr ? `${prev[2]} 후 ${hr}시간` : `${prev[2]} 무렵`} (${flow})`;
+}
+function catchStore() { kvSet('catches', catches).catch(() => toast('조과 저장 실패 (브라우저 저장공간 확인)')); }
+function spList() { // 많이 잡은 어종 먼저 + 기본 목록
+  const cnt = {}; catches.forEach(c => cnt[c.sp] = (cnt[c.sp] || 0) + c.n);
+  return [...new Set([...Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]), ...SP_DEFAULT])].slice(0, 16);
+}
+function cdAuto() {
+  const t = Date.parse(cdTime.value) || Date.now(), [la, lo] = cdPos.ll, d = depthAt(la, lo), h = tideAt(t);
+  return {t, d, h, ph: tidePhase(t)};
+}
+function cdShowAuto() {
+  const a = cdAuto(), [la, lo] = cdPos.ll;
+  document.getElementById('cdAuto').innerHTML = `${cdPos.how} · ${ddm(la, 'N', 'S')} ${ddm(lo, 'E', 'W')}<br>`
+    + (a.d == null ? '수심 자료 없음' : a.h != null ? `수심 그때 약 ${fmtD(a.d + a.h)} (평균 ${fmtD(a.d)})` : `수심 평균 ${fmtD(a.d)}`)
+    + ` · ${a.ph || '물때 정보 없음'}`;
+}
+function cdChips() {
+  const box = document.getElementById('cdChips'); box.innerHTML = '';
+  spList().forEach(sp => { const b = document.createElement('button'); b.textContent = sp; if (sp === cdSp) b.className = 'on';
+    b.onclick = () => { cdSp = sp; document.getElementById('cdSpIn').value = ''; cdChips(); }; box.appendChild(b); });
+}
+function openCatch(lat, lon) {
+  map.closePopup(); sideEl.classList.remove('open');
+  if (lat != null) cdPos = {ll: [lat, lon], how: '지도에서 고른 곳'};
+  else if (gpsWatch != null && lastGps && lastFix && Date.now() - lastFix.t < 120000) cdPos = {ll: lastGps.ll, how: '📍 지금 위치 (GPS)'};
+  else { const c = map.getCenter(); cdPos = {ll: [c.lat, c.lng], how: '지도 가운데 (GPS 꺼짐)'}; }
+  cdN.value = 1; document.getElementById('cdMemo').value = ''; document.getElementById('cdSpIn').value = '';
+  cdTime.value = toLocalInput(Date.now());
+  cdChips(); cdShowAuto(); catchDlg.style.display = 'flex';
+}
+const closeCatch = () => catchDlg.style.display = 'none';
+document.getElementById('catchBtn').onclick = () => openCatch();
+document.getElementById('cdCancel').onclick = closeCatch;
+catchDlg.onclick = e => { if (e.target === catchDlg) closeCatch(); };
+document.getElementById('cdMinus').onclick = () => cdN.value = Math.max(1, (parseInt(cdN.value) || 1) - 1);
+document.getElementById('cdPlus').onclick = () => cdN.value = (parseInt(cdN.value) || 0) + 1;
+document.getElementById('cdSpIn').oninput = e => { if (e.target.value.trim() && cdSp) { cdSp = ''; cdChips(); } };
+cdTime.onchange = cdShowAuto;
+document.getElementById('cdSave').onclick = () => {
+  const sp = document.getElementById('cdSpIn').value.trim() || cdSp;
+  if (!sp) { toast('어종을 고르세요'); return; }
+  const n = Math.max(1, parseInt(cdN.value) || 1), a = cdAuto(), [la, lo] = cdPos.ll;
+  catches.push({id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), t: a.t, lat: +la.toFixed(6), lon: +lo.toFixed(6), sp, n,
+    memo: document.getElementById('cdMemo').value.trim(), d: a.d == null ? null : +a.d.toFixed(1), th: a.h == null ? null : +a.h.toFixed(2), ph: a.ph});
+  catches.sort((x, y) => x.t - y.t); cdSp = sp; catchStore(); catchRender(); closeCatch();
+  toast(`${sp} ${n}마리 기록됨`);
+};
+function catchPopup(id) {
+  const c = catches.find(x => x.id === id); if (!c) return;
+  const dn = c.d != null && c.th != null ? c.d + c.th : null;
+  L.popup().setLatLng([c.lat, c.lon]).setContent(`<div class="pop"><b style="font-size:14px">🐟 ${esc(c.sp)} ${c.n}마리</b> <span style="color:#666">${fmtT(c.t, true)}</span><table>
+    <tr><td>위치</td><td>${ddm(c.lat, 'N', 'S')} ${ddm(c.lon, 'E', 'W')}</td></tr>
+    ${c.d != null ? `<tr><td>수심</td><td style="font-family:inherit">${dn != null ? `그때 약 ${fmtD(dn)} (평균 ${fmtD(c.d)})` : `평균 ${fmtD(c.d)}`}</td></tr>` : ''}
+    ${c.ph ? `<tr><td>물때</td><td style="font-family:inherit">${esc(c.ph)}${c.th != null ? ` · 물높이 ${c.th >= 0 ? '+' : ''}${c.th.toFixed(1)}m` : ''}</td></tr>` : ''}</table>
+    ${c.memo ? `<div style="margin-bottom:4px">${esc(c.memo)}</div>` : ''}
+    <button class="pri" onclick="setGotoCatch('${c.id}')">▶ 여기로 가기</button> <button onclick="openCatch(${c.lat},${c.lon})">🎣 여기 또 기록</button> <button class="dan" onclick="delCatch('${c.id}',this)">삭제</button></div>`).openOn(map);
+}
+const setGotoCatch = id => { const c = catches.find(x => x.id === id); if (c) setGoto(c.lat, c.lon, `${c.sp} ${fmtT(c.t)}`); };
+function delCatch(id, b) {
+  if (b.dataset.arm !== '1') { b.dataset.arm = '1'; b.textContent = '한 번 더 누르면 삭제'; setTimeout(() => { b.dataset.arm = ''; b.textContent = '삭제'; }, 3000); return; }
+  catches = catches.filter(c => c.id !== id); catchStore(); catchRender(); map.closePopup(); toast('조과 기록을 지웠습니다');
+}
+function catchRender() {
+  const f = catchSpF.value, list = catches.filter(c => !f || c.sp === f);
+  catchLayer.clearLayers();
+  list.forEach(c => L.marker([c.lat, c.lon], {zIndexOffset: 400, icon: L.divIcon({className: '', html: `<div class="fishm">🐟${c.n > 1 ? `<b>${c.n}</b>` : ''}</div>`, iconSize: [22, 22], iconAnchor: [11, 11]})})
+    .bindTooltip(`${esc(c.sp)} ${c.n}마리 · ${fmtT(c.t)}${c.ph ? ' · ' + esc(c.ph) : ''}`, {direction: 'top', offset: [0, -10]})
+    .on('click', e => { L.DomEvent.stop(e); catchPopup(c.id); }).addTo(catchLayer));
+  // 어종별 합계 + 들물/날물 나눠 보기
+  const by = {}; catches.forEach(c => { const o = by[c.sp] || (by[c.sp] = {n: 0, i: 0, o: 0}); o.n += c.n; if (/들물/.test(c.ph)) o.i += c.n; else if (/날물/.test(c.ph)) o.o += c.n; });
+  const sps = Object.entries(by).sort((a, b) => b[1].n - a[1].n);
+  document.getElementById('catchSum').innerHTML = sps.map(([s, o]) => `<b>${esc(s)}</b> ${o.n}${o.i || o.o ? ` (들물 ${o.i} · 날물 ${o.o})` : ''}`).join(' · ');
+  document.getElementById('catchInfo').textContent = catches.length ? `${catches.length}건 · ${catches.reduce((s, c) => s + c.n, 0)}마리` : '아직 없음';
+  catchSpF.innerHTML = '<option value="">전체 어종</option>' + sps.map(([s]) => `<option ${s === f ? 'selected' : ''}>${esc(s)}</option>`).join('');
+  const box = document.getElementById('catchList'); box.innerHTML = '';
+  list.slice().reverse().slice(0, 300).forEach(c => {
+    const r = document.createElement('div'); r.className = 'row'; r.style.cursor = 'pointer';
+    const dn = c.d != null && c.th != null ? c.d + c.th : c.d;
+    r.innerHTML = `<span class="nm">${fmtT(c.t)} <b>${esc(c.sp)}</b> ×${c.n}</span><span class="meta">${dn != null ? fmtD(dn) : ''}${c.ph ? ' · ' + esc(c.ph.replace(/ \(.*\)/, '')) : ''}</span>`;
+    r.onclick = () => { sideEl.classList.remove('open'); map.setView([c.lat, c.lon], Math.max(map.getZoom(), 14)); catchPopup(c.id); };
+    box.appendChild(r);
+  });
+}
+catchSpF.onchange = catchRender;
+document.getElementById('catchShow').onchange = e => e.target.checked ? catchLayer.addTo(map) : map.removeLayer(catchLayer);
+kvGet('catches').then(v => { if (Array.isArray(v)) catches = v; catchRender(); }).catch(() => catchRender());
+// CSV 저장 / 불러오기 (핸드폰 ↔ PC 옮기기, 엑셀로 보기)
+const CSV_HEAD = ['날짜', '시각', '어종', '마릿수', '위도', '경도', '그때수심(m)', '평균수심(m)', '물높이(m)', '물때', '메모', 'id'];
+function downloadText(text, name, type) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], {type})); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+const ymdDash = ms => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+document.getElementById('catchCsv').onclick = () => {
+  if (!catches.length) { toast('저장할 조과 기록이 없습니다'); return; }
+  const q = v => v == null ? '' : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+  const rows = catches.map(c => [ymdDash(c.t), hm(c.t), c.sp, c.n, c.lat, c.lon, c.d != null && c.th != null ? (c.d + c.th).toFixed(1) : '', c.d ?? '', c.th ?? '', c.ph, c.memo, c.id].map(q).join(','));
+  const name = `조과기록_${ymdDash(Date.now()).replace(/-/g, '')}.csv`;
+  downloadText('﻿' + [CSV_HEAD.join(','), ...rows].join('\r\n'), name, 'text/csv'); toast(`${name} 저장됨 (다운로드 폴더)`);
+};
+document.getElementById('catchGpx').onclick = () => {
+  if (!catches.length) { toast('저장할 조과 기록이 없습니다'); return; }
+  const iso = ms => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z'), md = ms => { const d = new Date(ms); return `${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`; };
+  const g = '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="lowrance-route-editor" xmlns="http://www.topografix.com/GPX/1/1">\n'
+    + catches.map(c => `<wpt lat="${c.lat}" lon="${c.lon}"><time>${iso(c.t)}</time><name>${esc(c.sp + c.n + ' ' + md(c.t))}</name><desc>${esc([fmtT(c.t, true), c.ph, c.memo].filter(Boolean).join(' · '))}</desc><sym>Fish</sym></wpt>`).join('\n')
+    + '\n</gpx>\n';
+  saveGpxFile(g, `조과_${ymdDash(Date.now()).replace(/-/g, '')}.gpx`);
+};
+function parseCsv(text) {
+  const rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { row.push(f); f = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
+    else f += ch;
+  }
+  if (f || row.length) { row.push(f); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim()));
+}
+document.getElementById('catchImp').onclick = () => document.getElementById('catchFile').click();
+document.getElementById('catchFile').onchange = async e => {
+  const file = e.target.files[0]; e.target.value = ''; if (!file) return;
+  const rows = parseCsv((await file.text()).replace(/^﻿/, '')), head = rows.shift() || [], col = k => head.indexOf(k);
+  if (col('어종') < 0 || col('위도') < 0) { toast('조과기록 CSV가 아닙니다'); return; }
+  const have = new Set(catches.map(c => c.id)), num = v => v === '' || v == null ? null : +v;
+  let add = 0, dup = 0;
+  for (const r of rows) {
+    const t = new Date(`${r[col('날짜')]}T${r[col('시각')]}`).getTime(), lat = +r[col('위도')], lon = +r[col('경도')];
+    if (isNaN(t) || isNaN(lat) || isNaN(lon)) continue;
+    const sp = r[col('어종')], rid = col('id') >= 0 && r[col('id')];
+    // id가 있으면 id로만, 없으면(손으로 만든 CSV) 시각(분)·위치·어종이 모두 같을 때 같은 기록으로 봄
+    const same = rid ? have.has(rid) : catches.some(c => Math.floor(c.t / 6e4) === Math.floor(t / 6e4) && c.sp === sp && Math.abs(c.lat - lat) < 1e-5 && Math.abs(c.lon - lon) < 1e-5);
+    if (same) { dup++; continue; }
+    const id = rid || `${t.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    catches.push({id, t, lat, lon, sp, n: +r[col('마릿수')] || 1, memo: r[col('메모')] || '', d: num(r[col('평균수심(m)')]), th: num(r[col('물높이(m)')]), ph: r[col('물때')] || ''});
+    have.add(id); add++;
+  }
+  catches.sort((x, y) => x.t - y.t); catchStore(); catchRender();
+  toast(`조과 ${add}건 추가${dup ? ` (이미 있는 ${dup}건 건너뜀)` : ''}`);
+};
+
 // 수심 + 물높이 = 그 시각 수심
-const whenWord = () => { if (tideFollowNow) return '지금'; const d = new Date(tideMs); return `${d.getMonth() + 1}/${d.getDate()} ${hm(tideMs)}`; };
+const whenWord =() => { if (tideFollowNow) return '지금'; const d = new Date(tideMs); return `${d.getMonth() + 1}/${d.getDate()} ${hm(tideMs)}`; };
 function depthNowText(d) {
   const h = tideAt(tideMsNow());
   if (d == null) return '';
