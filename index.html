@@ -183,6 +183,17 @@
       <div class="stat" id="catchSum" style="margin-top:4px"></div>
       <div id="catchList" style="max-height:240px;overflow:auto"></div>
     </div>
+    <div class="sec" id="offSec">
+      <h2>오프라인 지도 <small id="offInfo"></small></h2>
+      <div class="stat">바다에서 LTE가 끊겨도 위성지도가 보이게 <b>지금 화면에 보이는 지역</b>을 이 핸드폰에 저장합니다. 와이파이에서 받으세요. (수심·해도·포인트·GPS는 원래 인터넷 없이 됩니다)</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center">
+        최대 확대 <select id="offZ" style="font:inherit;padding:2px"><option value="14">14 (넓게·적게)</option><option value="15" selected>15 (권장)</option><option value="16">16 (자세히·많이)</option></select>
+        <button class="x pri" id="offGo">지금 화면 받기</button><button class="x" id="offStopBtn" style="display:none">멈춤</button>
+      </div>
+      <div class="stat" id="offMsg" style="margin-top:4px"></div>
+      <div id="offList"></div>
+      <div class="stat" id="offApp" style="margin-top:4px"></div>
+    </div>
     <div class="sec">
       <h2>항로 목록 <small>체크한 항로만 지도에 표시 (저장은 전부)</small></h2>
       <div class="row" id="rtHead" style="border-bottom:1px solid var(--line);font-weight:bold">
@@ -1248,6 +1259,7 @@ function sunTimes(ms, lat, lon) { // 일출·일몰 (그 한국 날짜, ±1분)
   return {rise: toMs(Jt - w), set: toMs(Jt + w)};
 }
 function renderMul() { // 물때 상자 머리에 '· 8물', 펼친 칸에 음력·일출·일몰 (지도 가운데 기준)
+  if (!map._loaded) return;
   const t = tideMsNow(), c = map.getCenter(), m = mulName(t, c.lng), st = sunTimes(t, c.lat, c.lng);
   const el = document.getElementById('tdMul'); el.textContent = `· ${m.name}`; el.title = `음력 ${m.ld}일 · ${m.sys}`;
   document.getElementById('tdSun').textContent = `음력 ${m.ld}일 · ${m.name} (${m.sys})` + (st ? ` · 일출 ${hm(st.rise)} · 일몰 ${hm(st.set)}` : '');
@@ -1258,14 +1270,29 @@ const TIDE_STATIONS = [
   ['DT_0011', '후포', 36.6775, 129.45305], ['DT_0013', '울릉도', 37.49138, 130.91361], ['DT_0009', '포항', 36.04722, 129.38388],
   ['DT_0020', '울산', 35.50194, 129.38722], ['DT_0005', '부산', 35.09638, 129.03527],
 ];
+// 받은 물때는 이 기기에 저장(최근 며칠치) → 인터넷이 안 될 때 같은 날 가장 가까운 지점(약 60km 안) 값을 씀
+function tideSave(key, v) {
+  try {
+    localStorage.setItem('tide:' + key, JSON.stringify(v));
+    const old = ymd(new Date(Date.now() - 3 * 864e5));
+    Object.keys(localStorage).filter(k => k.startsWith('tide:') && k.split(',')[2] < old).forEach(k => localStorage.removeItem(k));
+  } catch (e) {}
+  return v;
+}
+function tideLoad(lat, lon, day) {
+  let best = null, bd = 0.6;
+  try { for (const k of Object.keys(localStorage)) { if (!k.startsWith('tide:')) continue; const [la, lo, d] = k.slice(5).split(','); if (d !== day) continue; const dd = Math.hypot(la - lat, lo - lon); if (dd < bd) { bd = dd; best = k; } } } catch (e) {}
+  if (!best) return null;
+  const v = JSON.parse(localStorage.getItem(best)); v.port += ' · 저장값'; return v;
+}
 async function fetchTideDay(lat, lon, day) {
   lat = Math.round(lat * 10) / 10; lon = Math.round(lon * 10) / 10; // 약 10km 단위로 묶어서 호출 수를 줄임 (물때는 이 정도 거리에선 거의 같음)
   const key = `${lat},${lon},${day}`;
   if (tideCache.has(key)) return tideCache.get(key);
-  const p = (async () => {
+  const p = (async () => { try { return tideSave(key, await (async () => {
     // 1) TideBED: 고른 위치에 맞춘 값 (서해·남해만 됨)
     const u = `https://apis.data.go.kr/1192136/tidebed/GetTidebedApiService?serviceKey=${encodeURIComponent(TIDE_KEY)}&type=json&lat=${lat.toFixed(4)}&lot=${lon.toFixed(4)}&reqDate=${day}&min=10&numOfRows=300`;
-    const j = await (await fetch(u)).json();
+    const j = await (await fetch(u, {signal: AbortSignal.timeout(8000)})).json();
     let it = j.body && j.body.items && j.body.items.item || []; if (!Array.isArray(it)) it = [it];
     if (j.header.resultCode === '00' && it.length) {
       const jogo = +it[0].jogo, msl = +it[0].msl * jogo; // 선택 지점의 평균해면 (기준면 위 cm)
@@ -1274,12 +1301,12 @@ async function fetchTideDay(lat, lon, day) {
     // 2) 안 되면(동해 등) 가장 가까운 조석 예보지점 값. 평균해면은 그날 평균으로 셈 (동해는 조차 30cm 안팎이라 오차 몇 cm)
     const st = TIDE_STATIONS.reduce((a, s) => hav([lat, lon], [s[2], s[3]]) < hav([lat, lon], [a[2], a[3]]) ? s : a);
     const u2 = `https://apis.data.go.kr/1192136/tideFcstTime/GetTideFcstTimeApiService?serviceKey=${encodeURIComponent(TIDE_KEY)}&type=json&obsCode=${st[0]}&reqDate=${day}&min=10&numOfRows=300`;
-    const j2 = await (await fetch(u2)).json();
+    const j2 = await (await fetch(u2, {signal: AbortSignal.timeout(8000)})).json();
     let it2 = j2.body && j2.body.items && j2.body.items.item || []; if (!Array.isArray(it2)) it2 = [it2];
     if (j2.header.resultCode !== '00' || !it2.length) throw new Error(j2.header.resultMsg || j.header.resultMsg);
     const mean = it2.reduce((s, r) => s + +r.tdlvHgt, 0) / it2.length;
     return {port: st[1], josi: `${Math.round(hav([lat, lon], [st[2], st[3]]) / 1000)}km 떨어진 예보지점`, pts: it2.map(r => [Date.parse(r.predcDt.replace(' ', 'T') + ':00+09:00'), (+r.tdlvHgt - mean) / 100])};
-  })();
+  })()); } catch (er) { const v = tideLoad(lat, lon, day); if (v) return v; throw er; } })();
   tideCache.set(key, p); p.catch(() => tideCache.delete(key));
   return p;
 }
@@ -1344,7 +1371,7 @@ if (TIDE_KEY) {
   tideBox.style.display = 'block'; tdMore.style.display = tdTimeWrap.style.display = tdPortEl.style.display = 'none';
   document.getElementById('tdHead').textContent = '물때';
   document.getElementById('tdMain').innerHTML = '인증키가 없어 물때를 못 받습니다 <button class="x pri" id="tdKeyGo">설정에 키 넣기</button>';
-  renderMul(); map.on('moveend', renderMul); setInterval(renderMul, 600000);
+  setTimeout(renderMul, 800); map.on('moveend', renderMul); setInterval(renderMul, 600000); // 지도 위치가 정해진 뒤에 (바로 부르면 지도가 아직 없어 멈춤)
   document.getElementById('tdKeyGo').onclick = () => { sideEl.classList.add('open'); const sb = document.getElementById('setBox'); sb.open = true; sb.scrollIntoView(); document.getElementById('keyIn').focus(); };
 }
 // ---------- 핸드폰 메뉴 ----------
@@ -1656,6 +1683,98 @@ document.getElementById('cntUndo').onclick = () => {
   toast(`${c.sp} −1`); cntAfter();
 };
 [cntSp1, cntSp2].forEach((sel, k) => sel.onchange = () => { cntSp[k] = sel.value; try { localStorage.setItem('cntSp', JSON.stringify(cntSp)); } catch (e) {} cntRender(); });
+
+// ---------- 오프라인 지도: 지금 화면 지역의 위성지도 타일을 이 기기에 저장 (sw.js 가 인터넷 대신 꺼내 줌) ----------
+// sw.js = 앱 파일도 저장해서 인터넷 없이 앱이 열리게 함. PC에서 파일로 연 편집기(file://)는 안 됨
+const SAT_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', TILE_CACHE = 'tiles-v1';
+const offOk = 'caches' in window && 'serviceWorker' in navigator && location.protocol.startsWith('http');
+if (offOk) navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready).then(() => offRender()).catch(() => {});
+let offAreas = (() => { try { return JSON.parse(lsGet('offAreas')) || []; } catch (e) { return []; } })(), offStop = false, offBusy = false;
+const offSave = () => { try { localStorage.setItem('offAreas', JSON.stringify(offAreas)); } catch (e) {} };
+const offMsg = t => document.getElementById('offMsg').textContent = t;
+const tX = (lon, z) => Math.floor((lon + 180) / 360 * 2 ** z);
+const tY = (lat, z) => { const r = lat * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 2 ** z); };
+function offTiles(a) { // a.b = [남, 서, 북, 동], 확대 z0~z1 → 타일 주소 목록 (Leaflet이 부르는 주소와 똑같이)
+  const out = [], [s, w, n, e] = a.b;
+  for (let z = a.z0; z <= a.z1; z++) for (let x = tX(w, z); x <= tX(e, z); x++) for (let y = tY(n, z); y <= tY(s, z); y++)
+    out.push(SAT_URL.replace('{z}', z).replace('{y}', y).replace('{x}', x));
+  return out;
+}
+document.getElementById('offGo').onclick = async e => {
+  if (!offOk) { offMsg('PC에서 파일로 연 편집기에서는 안 됩니다. 핸드폰의 GitHub 주소에서 받으세요.'); return; }
+  if (offBusy) return;
+  const b = map.getBounds(), z1 = +document.getElementById('offZ').value;
+  const a = {b: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(v => +v.toFixed(4)), z0: 8, z1};
+  const n = offTiles(a).length, btn = e.target;
+  if (n > 40000) { offMsg(`너무 넓습니다 (${n.toLocaleString()}장). 지도를 더 확대해서 좁히거나 최대 확대를 낮추세요.`); return; }
+  if (btn.dataset.arm !== '1') { // 한 번 더 눌러야 받음 (용량 먼저 보여 줌)
+    btn.dataset.arm = '1'; btn.textContent = `한 번 더 누르면 받기 (${n.toLocaleString()}장 · 약 ${Math.max(1, Math.ceil(n * 0.019))}MB)`;
+    setTimeout(() => { btn.dataset.arm = ''; btn.textContent = '지금 화면 받기'; }, 6000); return;
+  }
+  btn.dataset.arm = ''; btn.textContent = '지금 화면 받기';
+  const same = offAreas.find(x => x.z1 === z1 && x.b.join() === a.b.join());
+  const d = new Date(); a.id = same ? same.id : Date.now().toString(36); a.name = `${document.getElementById('appTitle').textContent.replace(/ 항로$/, '')} ${d.getMonth() + 1}/${d.getDate()}`; a.n = n;
+  await offDownload(a);
+};
+document.getElementById('offStopBtn').onclick = () => { offStop = true; };
+async function offDownload(a) {
+  offBusy = true; offStop = false; document.getElementById('offStopBtn').style.display = '';
+  try { navigator.storage && navigator.storage.persist && await navigator.storage.persist(); } catch (e) {} // 저장공간이 모자라도 브라우저가 지우지 않게
+  const c = await caches.open(TILE_CACHE), q = offTiles(a), total = q.length; let i = 0, done = 0, fail = 0;
+  const show = () => offMsg(`받는 중 ${done.toLocaleString()} / ${total.toLocaleString()}장 (${Math.floor(done / total * 100)}%)${fail ? ` · 실패 ${fail}` : ''}`);
+  const worker = async () => {
+    while (i < total && !offStop) {
+      const url = q[i++];
+      try { if (!(await c.match(url))) { const r = await fetch(url, {mode: 'cors'}); if (r.ok) await c.put(url, r); else fail++; } } catch (er) { fail++; }
+      done++; if (done % 25 === 0 || done === total) show();
+    }
+  };
+  show(); await Promise.all(Array.from({length: 6}, worker));
+  let tideTxt = '';
+  if (TIDE_KEY && done === total) { // 물때도 어제~모레치 미리 저장
+    const la = (a.b[0] + a.b[2]) / 2, lo = (a.b[1] + a.b[3]) / 2;
+    const r = await Promise.all([-1, 0, 1, 2].map(k => fetchTideDay(la, lo, ymd(new Date(Date.now() + k * 864e5))).then(() => 1, () => 0)));
+    tideTxt = r.every(Boolean) ? ' · 물때(어제~모레)도 저장' : ' · 물때는 일부만 저장됨';
+  }
+  a.part = done < total || fail > 0;
+  offAreas = offAreas.filter(x => x.id !== a.id); offAreas.push(a); offSave();
+  offMsg(a.part ? `멈춤/일부 실패: ${done.toLocaleString()}/${total.toLocaleString()}장${fail ? `, 실패 ${fail}` : ''}. 같은 화면에서 다시 받으면 빠진 것만 받습니다.` : `완료: ${total.toLocaleString()}장 저장${tideTxt}`);
+  offBusy = false; document.getElementById('offStopBtn').style.display = 'none';
+  offRender();
+}
+async function offDel(a) {
+  offAreas = offAreas.filter(x => x.id !== a.id); offSave();
+  const keep = new Set(offAreas.flatMap(offTiles)), c = await caches.open(TILE_CACHE); // 다른 지역과 겹치는 타일은 남김
+  for (const u of offTiles(a)) if (!keep.has(u)) await c.delete(u);
+  toast('저장한 지도를 지웠습니다'); offRender();
+}
+async function offRender() {
+  const box = document.getElementById('offList'); box.innerHTML = '';
+  offAreas.slice().reverse().forEach(a => {
+    const r = document.createElement('div'); r.className = 'row';
+    r.innerHTML = `<span class="nm">${esc(a.name)}${a.part ? ' <span style="color:#c62828">(일부)</span>' : ''}</span><span class="meta">${a.n.toLocaleString()}장 · 확대 ${a.z1}까지</span>`;
+    const v = document.createElement('button'); v.className = 'x'; v.textContent = '보기';
+    v.onclick = () => { sideEl.classList.remove('open'); map.fitBounds([[a.b[0], a.b[1]], [a.b[2], a.b[3]]]); };
+    const del = document.createElement('button'); del.className = 'x dan'; del.textContent = '지우기';
+    del.onclick = () => { if (del.dataset.arm !== '1') { del.dataset.arm = '1'; del.textContent = '한 번 더'; setTimeout(() => { del.dataset.arm = ''; del.textContent = '지우기'; }, 3000); return; } offDel(a); };
+    r.append(v, del); box.appendChild(r);
+  });
+  document.getElementById('offInfo').textContent = offAreas.length ? `${offAreas.length}곳 저장` : '없음';
+  let est = ''; try { const s = await navigator.storage.estimate(); est = ` · 이 앱이 쓰는 저장공간 약 ${Math.round(s.usage / 1e6)}MB`; } catch (e) {}
+  document.getElementById('offApp').textContent = !offOk ? 'PC에서 파일로 열면 오프라인 기능이 없습니다 (핸드폰 GitHub 주소에서 사용)'
+    : (navigator.serviceWorker.controller ? '✅ 인터넷 없이도 앱이 열립니다' : '⏳ 앱 저장 준비 중 (새로고침 한 번 하면 끝남)') + est;
+}
+offRender();
+// 인터넷이 안 되면: 받아 둔 확대 단계 사진을 늘려서 보여 줌 (더 확대해도 빈 화면 대신)
+let offFallback = false, tileErr = 0;
+sat.on('tileerror', () => {
+  if (offFallback || !offAreas.length || ++tileErr < 4) return;
+  offFallback = true; sat.options.maxNativeZoom = Math.max(...offAreas.map(a => a.z1)); sat.redraw();
+  toast('인터넷이 안 돼서 저장한 지도로 보여 줍니다');
+});
+sat.on('tileload', () => { if (!offFallback) tileErr = 0; });
+window.addEventListener('online', () => { if (offFallback) { offFallback = false; tileErr = 0; sat.options.maxNativeZoom = 18; sat.redraw(); } });
+
 // CSV 저장 / 불러오기 (핸드폰 ↔ PC 옮기기, 엑셀로 보기)
 const CSV_HEAD = ['날짜', '시각', '어종', '마릿수', '위도', '경도', '그때수심(m)', '평균수심(m)', '물높이(m)', '물때이름', '물때', '메모', 'id'];
 function downloadText(text, name, type) {
