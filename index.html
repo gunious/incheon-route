@@ -2,7 +2,8 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 페이지 전체 확대 막음: 물때 상자·버튼 위에서 두 손가락으로 벌리면 페이지가 통째로 커져 버튼이 화면 밖으로 밀려남 (지도 확대는 지도가 따로 처리) -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>서해 인천권 항로</title>
 <meta name="theme-color" content="#0a3d62">
 <meta name="mobile-web-app-capable" content="yes">
@@ -17,7 +18,7 @@
 <style>
   :root { --bg: #fff; --fg: #1d1d1f; --muted: #6b6b70; --line: #e2e2e6; --accent: #0a66d8; --danger: #c62828; --hi: #eef4ff; }
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
+  html, body { height: 100%; margin: 0; touch-action: pan-x pan-y; } /* 두 손가락 페이지 확대 막기 (메뉴 위아래 굴리기는 됨) */
   body { font-family: "Malgun Gothic", system-ui, sans-serif; font-size: 13px; color: var(--fg); background: #111; display: flex; }
   #side { width: 400px; background: var(--bg); display: flex; flex-direction: column; border-right: 1px solid var(--line); }
   #map { flex: 1; }
