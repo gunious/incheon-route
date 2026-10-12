@@ -1269,6 +1269,11 @@ if (TIDE_KEY) {
   let tdTimer; map.on('moveend', () => { clearTimeout(tdTimer); tdTimer = setTimeout(loadTide, 600); });
   setInterval(() => { if (tideFollowNow) renderTide(); }, 60000);
   setTimeout(loadTide, 800);
+} else { // 키가 없으면 상자를 숨기지 말고 넣는 곳을 알려 줌 (핸드폰은 처음 한 번 [설정]에 넣어야 함)
+  tideBox.style.display = 'block'; tdMore.style.display = tdTimeWrap.style.display = tdPortEl.style.display = 'none';
+  document.getElementById('tdHead').textContent = '물때';
+  document.getElementById('tdMain').innerHTML = '인증키가 없어 물때를 못 받습니다 <button class="x pri" id="tdKeyGo">설정에 키 넣기</button>';
+  document.getElementById('tdKeyGo').onclick = () => { sideEl.classList.add('open'); const sb = document.getElementById('setBox'); sb.open = true; sb.scrollIntoView(); document.getElementById('keyIn').focus(); };
 }
 // ---------- 핸드폰 메뉴 ----------
 const sideEl = document.getElementById('side');
