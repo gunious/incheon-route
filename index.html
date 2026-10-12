@@ -57,6 +57,7 @@
   #tideBox .row1 { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   #tideBox input { font: inherit; padding: 1px 3px; }
   #tideBox .big { font-size: 15px; font-weight: bold; }
+  .wxT { border-collapse: collapse; width: 100%; font-size: 11px; } .wxT th, .wxT td { border-bottom: 1px solid #e3e6ea; padding: 1px 3px; text-align: left; white-space: nowrap; } .wxT th { color: #667; font-weight: normal; }
   #dropChoice { position: fixed; inset: 0; z-index: 3001; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; }
   #dropChoice > div { background: #fff; border-radius: 10px; padding: 18px 22px; font-size: 14px; line-height: 1.7; text-align: center; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
   #empty { position: absolute; z-index: 900; left: 400px; right: 0; top: 0; bottom: 0; display: none; align-items: center; justify-content: center; pointer-events: none; }
@@ -292,8 +293,9 @@
   <div class="row1"><b id="tdHead" style="cursor:pointer">물때 ▾</b><b id="tdMul" style="color:#0a66d8;margin-left:4px"></b> <span id="tdPort" class="stat"></span>
     <span id="tdTimeWrap"><input type="datetime-local" id="tdTime"> <button class="x" id="tdNow">지금</button></span></div>
   <div id="tdMain" style="margin-top:3px"></div>
+  <div id="wxMain" style="margin-top:2px"></div>
   <div id="tdMore"><svg id="tdChart" width="330" height="56" style="display:block;margin-top:2px"></svg>
-  <div id="tdExt" class="stat"></div><div id="tdSun" class="stat"></div></div>
+  <div id="tdExt" class="stat"></div><div id="tdSun" class="stat"></div><div id="wxTable" style="margin-top:3px"></div></div>
 </div>
 <div id="cur"></div>
 <div id="toast"></div>
@@ -1353,7 +1355,7 @@ function renderTide() {
       + `<path d="${line}" fill="none" stroke="#0a66d8" stroke-width="2"/>`
       + (h != null ? `<line x1="${X(t)}" x2="${X(t)}" y1="0" y2="${H}" stroke="#c62828" stroke-width="1.5"/><circle cx="${X(t)}" cy="${Y(h)}" r="3.5" fill="#c62828"/>` : '');
   }
-  renderMul();
+  renderMul(); if (typeof renderWx === 'function') renderWx();
   if (typeof updateGpsInfo === 'function') updateGpsInfo();
 }
 // 물때 상자 접기/펼치기 (핸드폰에선 처음에 접힘: 물높이 한 줄만)
@@ -1374,6 +1376,172 @@ if (TIDE_KEY) {
   setTimeout(renderMul, 800); map.on('moveend', renderMul); setInterval(renderMul, 600000); // 지도 위치가 정해진 뒤에 (바로 부르면 지도가 아직 없어 멈춤)
   document.getElementById('tdKeyGo').onclick = () => { sideEl.classList.add('open'); const sb = document.getElementById('setBox'); sb.open = true; sb.scrollIntoView(); document.getElementById('keyIn').focus(); };
 }
+// ---------- 해상 날씨: 기상청 단기예보·특보 + ECMWF 비교 ----------
+// 기상청(공공데이터 키 필요): 바람·파고·날씨·비 확률, 풍랑·강풍 특보 → 공식 값이라 먼저 보여 줌
+// ECMWF 9km (Open-Meteo, 키 없음): 바람·돌풍 → Windy 기본과 같은 계열이라 나란히 비교용. 키가 없으면 이것만 나옴
+// 지도 가운데 기준. 받은 예보·특보는 이 기기에 저장 → 인터넷이 안 되면 마지막 값(하루 넘은 건 안 씀)
+const WX_DIR = ['북', '북북동', '북동', '동북동', '동', '동남동', '남동', '남남동', '남', '남남서', '남서', '서남서', '서', '서북서', '북서', '북북서'];
+const wxDirTxt = d => d == null ? '' : WX_DIR[Math.round(d / 22.5) % 16];
+const wxArrow = d => d == null ? '' : `<span style="display:inline-block;transform:rotate(${d}deg)" title="바람이 불어 가는 쪽">↓</span>`; // 북풍이면 ↓(남쪽으로 붊)
+function wxSky(c) { // ECMWF(WMO 코드) → [그림, 말]
+  if (c == null) return ['', ''];
+  if (c === 0) return ['☀️', '맑음']; if (c <= 2) return ['🌤', '구름 조금']; if (c === 3) return ['☁️', '흐림'];
+  if (c === 45 || c === 48) return ['🌫', '안개']; if (c <= 57) return ['🌦', '이슬비']; if (c <= 67) return ['🌧', '비'];
+  if (c <= 77) return ['🌨', '눈']; if (c <= 82) return ['🌦', '소나기']; if (c <= 86) return ['🌨', '눈 소나기']; return ['⛈', '뇌우'];
+}
+function kmaSky(sky, pty) { // 기상청 하늘(SKY)·강수형태(PTY) → [그림, 말]
+  if (pty === 1) return ['🌧', '비']; if (pty === 2) return ['🌨', '비/눈']; if (pty === 3) return ['🌨', '눈']; if (pty === 4) return ['🌦', '소나기'];
+  if (sky === 1) return ['☀️', '맑음']; if (sky === 3) return ['⛅', '구름 많음']; if (sky === 4) return ['☁️', '흐림']; return ['', ''];
+}
+function kmaGrid(lat, lon) { // 기상청 단기예보 5km 격자 (기상청 공식 변환식, 서울시청 = 60,127)
+  const RE = 6371.00877, GRID = 5.0, SLAT1 = 30.0, SLAT2 = 60.0, OLON = 126.0, OLAT = 38.0, XO = 43, YO = 136, D = Math.PI / 180;
+  const re = RE / GRID, s1 = SLAT1 * D, s2 = SLAT2 * D, olon = OLON * D, olat = OLAT * D, q = x => Math.tan(Math.PI * 0.25 + x * 0.5);
+  const sn = Math.log(Math.cos(s1) / Math.cos(s2)) / Math.log(q(s2) / q(s1)), sf = Math.pow(q(s1), sn) * Math.cos(s1) / sn, ro = re * sf / Math.pow(q(olat), sn);
+  const ra = re * sf / Math.pow(q(lat * D), sn); let th = lon * D - olon; if (th > Math.PI) th -= 2 * Math.PI; if (th < -Math.PI) th += 2 * Math.PI; th *= sn;
+  return {nx: Math.floor(ra * Math.sin(th) + XO + 0.5), ny: Math.floor(ro - ra * Math.cos(th) + YO + 0.5)};
+}
+// 저장: 같은 종류(pre)에서 가장 가까운 것 (dist 함수 기준), 하루 넘은 건 안 씀
+function wxStore(pre, key, v) {
+  try {
+    localStorage.setItem(pre + key, JSON.stringify(v));
+    Object.keys(localStorage).filter(k => k.startsWith(pre)).forEach(k => { try { if (Date.now() - JSON.parse(localStorage.getItem(k)).at > 2 * 864e5) localStorage.removeItem(k); } catch (e) { localStorage.removeItem(k); } });
+  } catch (e) {}
+  return v;
+}
+function wxRestore(pre, dist, max) {
+  let best = null, bd = max;
+  try { for (const k of Object.keys(localStorage)) { if (!k.startsWith(pre)) continue; const d = dist(k.slice(pre.length).split(',').map(Number)); if (d < bd) { bd = d; best = k; } } } catch (e) {}
+  if (!best) return null;
+  const v = JSON.parse(localStorage.getItem(best));
+  if (Date.now() - v.at > 864e5) return null;
+  v.saved = true; return v;
+}
+let wx = null, kma = null, warn = null; const wxMem = new Map();
+const wxEl = () => document.getElementById('wxMain');
+async function fetchWx(lat, lon) { // ECMWF + Open-Meteo 파고(기상청 파고가 없을 때만 씀)
+  lat = Math.round(lat * 10) / 10; lon = Math.round(lon * 10) / 10;
+  const key = `${lat},${lon}`, m = wxMem.get('e' + key);
+  if (m && Date.now() - m.at < 30 * 6e4) return m;
+  const q = `latitude=${lat}&longitude=${lon}&timezone=Asia%2FSeoul&forecast_days=3`;
+  try {
+    const [w, s] = await Promise.all([
+      fetch(`https://api.open-meteo.com/v1/forecast?${q}&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=ms&models=ecmwf_ifs`, {signal: AbortSignal.timeout(8000)}).then(r => r.json()),
+      fetch(`https://marine-api.open-meteo.com/v1/marine?${q}&hourly=wave_height`, {signal: AbortSignal.timeout(8000)}).then(r => r.json()).catch(() => null)
+    ]);
+    if (!w.hourly) throw new Error(w.reason || '날씨 자료 없음');
+    const h = w.hourly, sh = s && s.hourly;
+    const v = {at: Date.now(), t: h.time.map(x => Date.parse(x + ':00+09:00')), ws: h.wind_speed_10m, wd: h.wind_direction_10m, wg: h.wind_gusts_10m, wc: h.weather_code, pp: h.precipitation_probability, tp: h.temperature_2m,
+      wh: sh ? h.time.map(x => { const i = sh.time.indexOf(x); return i < 0 ? null : sh.wave_height[i]; }) : null};
+    wxMem.set('e' + key, v); return wxStore('wx:', key, v);
+  } catch (er) { const v = wxRestore('wx:', ([a, b]) => Math.hypot(a - lat, b - lon), 0.6); if (v) return v; throw er; }
+}
+function kmaBase() { // 가장 최근 발표 시각 (02·05·08·11·14·17·20·23시, 발표 후 15분 지나야 나옴)
+  const k = new Date(Date.now() + 9 * 36e5 - 15 * 6e4), hrs = [2, 5, 8, 11, 14, 17, 20, 23];
+  let h = hrs.filter(x => x <= k.getUTCHours()).pop(), d = k;
+  if (h == null) { h = 23; d = new Date(k - 864e5); }
+  return {date: `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`, time: String(h).padStart(2, '0') + '00'};
+}
+async function fetchKma(lat, lon) {
+  const g = kmaGrid(lat, lon), key = `${g.nx},${g.ny}`, m = wxMem.get('k' + key);
+  if (m && Date.now() - m.at < 30 * 6e4) return m;
+  try {
+    const b = kmaBase();
+    const j = await (await fetch(`https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${encodeURIComponent(TIDE_KEY)}&pageNo=1&numOfRows=1000&dataType=JSON&base_date=${b.date}&base_time=${b.time}&nx=${g.nx}&ny=${g.ny}`, {signal: AbortSignal.timeout(8000)})).json();
+    const it = j.response && j.response.body && j.response.body.items && j.response.body.items.item;
+    if (!it || !it.length) throw new Error((j.response && j.response.header && j.response.header.resultMsg) || '기상청 예보 없음');
+    const by = new Map();
+    for (const r of it) {
+      const ms = Date.parse(`${r.fcstDate.slice(0, 4)}-${r.fcstDate.slice(4, 6)}-${r.fcstDate.slice(6)}T${r.fcstTime.slice(0, 2)}:00:00+09:00`);
+      if (!by.has(ms)) by.set(ms, {}); by.get(ms)[r.category] = r.fcstValue;
+    }
+    const t = [...by.keys()].sort((a, b) => a - b), num = (o, k) => o[k] == null || isNaN(+o[k]) ? null : +o[k];
+    const v = {at: Date.now(), base: `${b.time.slice(0, 2)}시 발표`, t, ws: t.map(x => num(by.get(x), 'WSD')), wd: t.map(x => num(by.get(x), 'VEC')), wh: t.map(x => num(by.get(x), 'WAV')),
+      sky: t.map(x => num(by.get(x), 'SKY')), pty: t.map(x => num(by.get(x), 'PTY')), pp: t.map(x => num(by.get(x), 'POP')), tp: t.map(x => num(by.get(x), 'TMP'))};
+    wxMem.set('k' + key, v); return wxStore('kma:', key, v);
+  } catch (er) { const v = wxRestore('kma:', ([a, b]) => Math.hypot(a - g.nx, b - g.ny), 12); if (v) return v; throw er; }
+}
+// 특보: 전국 현황 글에서 풍랑·강풍·태풍·폭풍해일 줄만, 지도 가운데 해역과 관련 있는 것만
+const WARN_KIND = /풍랑|강풍|태풍|폭풍해일/;
+function warnArea(lat, lon) { // 이 해역 특보에 나오는 낱말들
+  if (lon < 127.2 && lat >= 36) return ['서해중부', '인천', '경기', '충남', '서해5도'];
+  if (lon < 127.2) return ['서해남부', '전북', '전남'];
+  if (lat >= 36.3 && lon > 128) return ['동해중부', '강원', '울릉', '독도', '경북북부'];
+  if (lat < 34) return ['제주', '남해서부먼바다'];
+  return ['남해', '동해남부', '경남', '부산', '울산', '전남동부', '경북남부'];
+}
+function parseWarn(txt, words) { // "o 풍랑주의보 : 서해중부먼바다, …" 또는 "(1) 풍랑 예비특보" 다음 줄들에 "o 13일 새벽 : 인천·경기남부앞바다"
+  const out = []; let kind = '';
+  for (const raw of (txt || '').split(/\r?\n/)) {
+    const l = raw.replace(/^\s*(o|ㅇ|\(\d+\))\s*/, '').trim(); if (!l || /^없\s*음/.test(l)) continue;
+    const isKind = WARN_KIND.test(l), hasArea = words.some(w => l.includes(w));
+    if (/^\s*\(\d+\)/.test(raw)) kind = isKind ? l.split(':')[0].trim() : ''; // 새 항목 시작
+    if (hasArea && isKind) out.push(l); else if (hasArea && kind) out.push(`${kind} · ${l}`);
+  }
+  return out;
+}
+async function fetchWarn() {
+  if (warn && !warn.saved && Date.now() - warn.at < 10 * 6e4) return warn;
+  try {
+    const j = await (await fetch(`https://apis.data.go.kr/1360000/WthrWrnInfoService/getPwnStatus?serviceKey=${encodeURIComponent(TIDE_KEY)}&pageNo=1&numOfRows=10&dataType=JSON`, {signal: AbortSignal.timeout(8000)})).json();
+    const it = j.response && j.response.body && j.response.body.items && j.response.body.items.item;
+    if (!it || !it.length) throw new Error('특보 자료 없음');
+    const v = {at: Date.now(), now: it[0].t6 || '', pre: it[0].t7 || ''};
+    try { localStorage.setItem('wxWarn', JSON.stringify(v)); } catch (e) {}
+    return v;
+  } catch (er) { try { const v = JSON.parse(localStorage.getItem('wxWarn')); if (v && Date.now() - v.at < 864e5) { v.saved = true; return v; } } catch (e) {} throw er; }
+}
+async function loadWx() {
+  if (!map._loaded) return;
+  const c = map.getCenter();
+  const [a, b, w] = await Promise.allSettled([fetchWx(c.lat, c.lng), TIDE_KEY ? fetchKma(c.lat, c.lng) : Promise.reject(new Error('키 없음')), TIDE_KEY ? fetchWarn() : Promise.reject(new Error('키 없음'))]);
+  wx = a.status === 'fulfilled' ? a.value : null; kma = b.status === 'fulfilled' ? b.value : null; warn = w.status === 'fulfilled' ? w.value : null;
+  if (!wx && !kma) { const el = wxEl(); if (el) el.innerHTML = `<span class="stat">날씨를 못 받았습니다 (${esc(a.reason && a.reason.message || '')})</span>`; return; }
+  renderWx();
+}
+const idxAt = (d, ms) => { if (!d) return -1; let i = d.t.findIndex(t => t > ms) - 1; if (i < 0) i = ms < d.t[0] ? 0 : d.t.length - 1; return i; };
+const wxAt = (d, k, i) => d && d[k] && i >= 0 && d[k][i] != null ? d[k][i] : null;
+function renderWx() {
+  const el = wxEl(); if (!el || (!wx && !kma)) return;
+  const t = tideMsNow(), c = map.getCenter(), ki = idxAt(kma, t), ei = idxAt(wx, t);
+  // 지금 값: 기상청 먼저, 없으면 ECMWF
+  const ws = kma ? wxAt(kma, 'ws', ki) : wxAt(wx, 'ws', ei), wd = kma ? wxAt(kma, 'wd', ki) : wxAt(wx, 'wd', ei);
+  const wh = wxAt(kma, 'wh', ki) ?? wxAt(wx, 'wh', ei), tp = kma ? wxAt(kma, 'tp', ki) : wxAt(wx, 'tp', ei);
+  const [ic] = kma ? kmaSky(wxAt(kma, 'sky', ki), wxAt(kma, 'pty', ki)) : wxSky(wxAt(wx, 'wc', ei));
+  // 특보 (이 해역 것만)
+  const words = warnArea(c.lat, c.lng), wNow = warn ? parseWarn(warn.now, words) : [], wPre = warn ? parseWarn(warn.pre, words) : [];
+  // 앞으로 12시간 안에 바람·파고가 세지는지 (기상청 값 기준, 없으면 ECMWF. 풍랑주의보 기준: 바람 14m/s 또는 파고 3m 이상)
+  const src = kma || wx, si = kma ? ki : ei; let soon = '', lvl = 0;
+  for (let k = si; k < Math.min(src.t.length, si + 13); k++) {
+    const s = wxAt(src, 'ws', k) || 0, g = wxAt(src, 'wh', k) ?? (kma ? null : wxAt(wx, 'wh', k)) ?? 0, L = s >= 14 || g >= 3 ? 2 : s >= 8 || g >= 1.5 ? 1 : 0;
+    if (L > lvl) { lvl = L; soon = `${k === si ? '지금' : hm(src.t[k]) + '부터'} ${s >= 8 ? `바람 ${Math.round(s)}m/s` : ''}${s >= 8 && g >= 1.5 ? ' · ' : ''}${g >= 1.5 ? `파고 ${g.toFixed(1)}m` : ''}${L === 2 ? ' (풍랑주의보 수준)' : ''}`; }
+  }
+  const eTxt = kma && wx ? ` <span class="stat">· ECMWF ${wxAt(wx, 'ws', ei) == null ? '-' : wxAt(wx, 'ws', ei).toFixed(0)}m/s${wxAt(wx, 'wg', ei) != null ? `(돌풍 ${wxAt(wx, 'wg', ei).toFixed(0)})` : ''}</span>`
+    : wx && wxAt(wx, 'wg', ei) != null ? ` <span class="stat">(돌풍 ${wxAt(wx, 'wg', ei).toFixed(0)})</span>` : '';
+  el.innerHTML = wNow.map(l => `<div style="color:#fff;background:#c62828;border-radius:4px;padding:1px 5px;margin:1px 0;font-weight:bold">⛔ 특보: ${esc(l)}</div>`).join('')
+    + wPre.map(l => `<div style="color:#c62828;font-weight:bold">예비특보: ${esc(l)}</div>`).join('')
+    + `🌬 ${wxDirTxt(wd)} ${ws == null ? '-' : ws.toFixed(0)}m/s · 🌊 ${wh == null ? '-' : wh.toFixed(1) + 'm'} · ${ic} ${tp == null ? '' : Math.round(tp) + '℃'}${eTxt}`
+    + (soon ? `<div style="color:${lvl === 2 ? '#c62828' : '#e65100'};font-weight:bold">⚠ ${soon}</div>` : '')
+    + ((kma && kma.saved) || (wx && wx.saved) || (warn && warn.saved) ? ` <span class="stat">· 저장된 예보 (${hm((kma || wx).at)} 받음)</span>` : '');
+  // 펼친 칸: 3시간 간격 24시간 표 (기상청 · ECMWF 나란히)
+  const rows = [];
+  for (let k = 0; k <= 24; k += 3) {
+    const ms = (src.t[si] || t) + k * 36e5, a = idxAt(kma, ms), e = idxAt(wx, ms);
+    const s = kma ? wxAt(kma, 'ws', a) : wxAt(wx, 'ws', e), d = kma ? wxAt(kma, 'wd', a) : wxAt(wx, 'wd', e), g = wxAt(kma, 'wh', a) ?? wxAt(wx, 'wh', e);
+    const [ic2, sky] = kma ? kmaSky(wxAt(kma, 'sky', a), wxAt(kma, 'pty', a)) : wxSky(wxAt(wx, 'wc', e)), pp = kma ? wxAt(kma, 'pp', a) : wxAt(wx, 'pp', e);
+    const col = (s || 0) >= 14 || (g || 0) >= 3 ? '#c62828' : (s || 0) >= 8 || (g || 0) >= 1.5 ? '#e65100' : '';
+    const dt = new Date(ms);
+    rows.push(`<tr style="${col ? `color:${col};font-weight:bold` : ''}"><td>${dt.getDate() !== new Date(t).getDate() ? dt.getDate() + '일 ' : ''}${dt.getHours()}시</td>`
+      + `<td>${wxArrow(d)} ${wxDirTxt(d)} ${s == null ? '-' : s.toFixed(0)}</td>`
+      + (kma && wx ? `<td class="stat">${wxAt(wx, 'ws', e) == null ? '-' : wxAt(wx, 'ws', e).toFixed(0)}${wxAt(wx, 'wg', e) != null ? `(${wxAt(wx, 'wg', e).toFixed(0)})` : ''}</td>` : !kma && wx ? `<td class="stat">${wxAt(wx, 'wg', e) == null ? '' : wxAt(wx, 'wg', e).toFixed(0)}</td>` : '')
+      + `<td>${g == null ? '-' : g.toFixed(1)}</td><td title="${sky}">${ic2}</td><td>${pp == null ? '' : pp + '%'}</td></tr>`);
+  }
+  const head = kma && wx ? '<th>시각</th><th>바람(기상청)</th><th>ECMWF(돌풍)</th><th>파고</th><th>날씨</th><th>비</th>' : !kma ? '<th>시각</th><th>바람 m/s</th><th>돌풍</th><th>파고</th><th>날씨</th><th>비</th>' : '<th>시각</th><th>바람 m/s</th><th>파고</th><th>날씨</th><th>비</th>';
+  document.getElementById('wxTable').innerHTML = `<table class="wxT"><tr>${head}</tr>${rows.join('')}</table><div class="stat" style="font-size:10px">`
+    + (kma ? `기상청 단기예보(${kma.base}) · ` : '') + (warn ? `특보 ${hm(warn.at)} 확인 · ` : '') + (wx ? 'ECMWF·파고 보조: Open-Meteo.com · ' : '') + '바람 m/s, 파고 m · 예보라 실제와 다를 수 있음</div>';
+}
+setTimeout(loadWx, 900);
+{ let wxTimer; map.on('moveend', () => { clearTimeout(wxTimer); wxTimer = setTimeout(loadWx, 900); }); }
+setInterval(() => { if (tideFollowNow) loadWx(); }, 10 * 6e4);
 // ---------- 핸드폰 메뉴 ----------
 const sideEl = document.getElementById('side');
 document.getElementById('menuBtn').onclick = () => sideEl.classList.add('open');
@@ -1736,6 +1904,7 @@ async function offDownload(a) {
     const r = await Promise.all([-1, 0, 1, 2].map(k => fetchTideDay(la, lo, ymd(new Date(Date.now() + k * 864e5))).then(() => 1, () => 0)));
     tideTxt = r.every(Boolean) ? ' · 물때(어제~모레)도 저장' : ' · 물때는 일부만 저장됨';
   }
+  if (done === total) { const la = (a.b[0] + a.b[2]) / 2, lo = (a.b[1] + a.b[3]) / 2; const ok = await Promise.all([fetchWx(la, lo).then(() => 1, () => 0), TIDE_KEY ? fetchKma(la, lo).then(() => 1, () => 0) : 0, TIDE_KEY ? fetchWarn().then(() => 1, () => 0) : 0]); tideTxt += ok.some(Boolean) ? ' · 날씨 예보도 저장' : ''; }
   a.part = done < total || fail > 0;
   offAreas = offAreas.filter(x => x.id !== a.id); offAreas.push(a); offSave();
   offMsg(a.part ? `멈춤/일부 실패: ${done.toLocaleString()}/${total.toLocaleString()}장${fail ? `, 실패 ${fail}` : ''}. 같은 화면에서 다시 받으면 빠진 것만 받습니다.` : `완료: ${total.toLocaleString()}장 저장${tideTxt}`);
