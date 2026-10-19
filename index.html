@@ -1567,7 +1567,12 @@ function myTrkRender() {
   const info = document.getElementById('myTrkInfo');
   info.textContent = myTrk.length ? `${km(myTrkLen())} · ${myTrk.length}점 · ${hm(myTrk[0][2])}부터` : '아직 없음';
 }
-function myTrkStore() { clearTimeout(myTrkSaveTimer); myTrkSaveTimer = setTimeout(() => kvSet('myTrack', myTrk).catch(() => {}), 3000); }
+// 점이 계속 들어와도(달리는 중) 첫 점부터 3초 안에는 꼭 저장 (타이머를 다시 시작하지 않음)
+function myTrkFlush() { clearTimeout(myTrkSaveTimer); myTrkSaveTimer = null; kvSet('myTrack', myTrk).catch(() => {}); }
+function myTrkStore() { if (myTrkSaveTimer == null) myTrkSaveTimer = setTimeout(myTrkFlush, 3000); }
+// 화면 꺼짐·크롬 나감: 기다리지 않고 바로 저장
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && myTrkSaveTimer != null) myTrkFlush(); });
+addEventListener('pagehide', () => { if (myTrkSaveTimer != null) myTrkFlush(); });
 function myTrkAdd(ll, t, acc) {
   if (!document.getElementById('myTrkRec').checked || acc > 50) return;
   const last = myTrk[myTrk.length - 1];
