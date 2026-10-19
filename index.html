@@ -337,7 +337,7 @@ function parseGpx(text, allowEmpty) {
   const ok = ([la, lo]) => isFinite(la) && isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180 && !(la === 0 && lo === 0);
   const wps = all(doc, 'wpt').map(el => {
     const [lat, lon] = ll(el), name = kid(el, 'name');
-    return ['', name, kid(el, 'desc'), lat, lon, dms(lat, 'N', 'S'), dms(lon, 'E', 'W'), ddm(lat, 'N', 'S'), ddm(lon, 'E', 'W'), ''];
+    return ['', name, kid(el, 'desc'), lat, lon, dms(lat, 'N', 'S'), dms(lon, 'E', 'W'), ddm(lat, 'N', 'S'), ddm(lon, 'E', 'W'), kid(el, 'sym')]; // [9] = 어탐기 아이콘 (예: circle,blue)
   }).filter(w => ok([w[3], w[4]]));
   const routes = all(doc, 'rte').map(el => ({name: kid(el, 'name'),
     pts: all(el, 'rtept').map(p => { const [lat, lon] = ll(p); return {lat, lon, name: kid(p, 'name')}; }).filter(p => ok([p.lat, p.lon]))})).filter(r => r.pts.length);
@@ -1064,7 +1064,7 @@ const x = s => esc(s).slice(0, 200);
 // allTrails: 합치기용. 체크를 꺼 둔 항적도 (삭제만 안 했으면) 넣음
 function buildGpx(allTrails) {
   const del = new Set(S.deleted); let g = '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="lowrance-route-editor" xmlns="http://www.topografix.com/GPX/1/1">\n';
-  DATA.wps.forEach((w, i) => { if (!del.has(i)) g += `<wpt lat="${w[3].toFixed(7)}" lon="${w[4].toFixed(7)}"><name>${x(w[1])}</name>${w[2] ? `<desc>${x(w[2])}</desc>` : ''}</wpt>\n`; });
+  DATA.wps.forEach((w, i) => { if (!del.has(i)) g += `<wpt lat="${w[3].toFixed(7)}" lon="${w[4].toFixed(7)}"><name>${x(w[1])}</name>${w[2] ? `<desc>${x(w[2])}</desc>` : ''}${w[9] ? `<sym>${x(w[9])}</sym>` : ''}</wpt>\n`; });
   S.routes.forEach(r => { g += `<rte><name>${x(r.name)}</name>\n`; r.pts.forEach(p => g += `<rtept lat="${p.lat.toFixed(7)}" lon="${p.lon.toFixed(7)}"><name>${x(p.name)}</name></rtept>\n`); g += '</rte>\n'; });
   DATA.trails.forEach((t, i) => { if (!(allTrails ? liveTrail(i) : sendTrail(i))) return; g += `<trk><name>${x(t[0])}</name><trkseg>`; t[2].forEach(p => g += `<trkpt lat="${p[0].toFixed(7)}" lon="${p[1].toFixed(7)}"/>`); g += '</trkseg></trk>\n'; });
   return g + '</gpx>\n';
@@ -1111,7 +1111,7 @@ async function mergeFile(f) {
 }
 function gpxText(d) {
   let g = '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="lowrance-route-editor" xmlns="http://www.topografix.com/GPX/1/1">\n';
-  d.wps.forEach(w => g += `<wpt lat="${w[3].toFixed(7)}" lon="${w[4].toFixed(7)}"><name>${x(w[1])}</name>${w[2] ? `<desc>${x(w[2])}</desc>` : ''}</wpt>\n`);
+  d.wps.forEach(w => g += `<wpt lat="${w[3].toFixed(7)}" lon="${w[4].toFixed(7)}"><name>${x(w[1])}</name>${w[2] ? `<desc>${x(w[2])}</desc>` : ''}${w[9] ? `<sym>${x(w[9])}</sym>` : ''}</wpt>\n`);
   d.routes.forEach(r => { g += `<rte><name>${x(r.name)}</name>\n`; r.pts.forEach(p => g += `<rtept lat="${p.lat.toFixed(7)}" lon="${p.lon.toFixed(7)}"><name>${x(p.name)}</name></rtept>\n`); g += '</rte>\n'; });
   d.trails.forEach(t => { g += `<trk><name>${x(t[0])}</name><trkseg>`; t[2].forEach(p => g += `<trkpt lat="${p[0].toFixed(7)}" lon="${p[1].toFixed(7)}"/>`); g += '</trkseg></trk>\n'; });
   return g + '</gpx>\n';
