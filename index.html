@@ -213,11 +213,12 @@
       <div class="row" style="border-bottom:1px solid var(--line);font-weight:bold">
         <label style="display:flex;gap:6px;align-items:center;flex:1;cursor:pointer"><input type="checkbox" id="trAll"> 전체 선택 <span class="meta" id="trAllInfo" style="font-weight:normal"></span></label>
         <button class="x" id="trSmall" title="500점 이상인 큰 항적만 빼고 모두 선택">큰 항적 빼고 선택</button>
+        <button class="x" id="trFit" title="체크한 항적이 모두 보이게 지도 맞추기">선택한 것 보기</button>
       </div>
       <div id="trails"></div>
     </div>
     <div class="sec" id="wpSec">
-      <h2>웨이포인트 <span><small id="wpCount"></small> <button class="x" id="btnFit">전체 보기</button></span></h2>
+      <h2>웨이포인트 <span><small id="wpCount"></small> <button class="x" id="btnFit" title="체크한 묶음의 웨이포인트가 모두 보이게 지도 맞추기">선택한 것 보기</button></span></h2>
       <div id="wpGroups"></div>
       <div id="wpDelBox"></div>
       <div style="display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap">
@@ -811,7 +812,7 @@ function renderLabels() {
     boxes.push(bx); shown.push(i);
   }
   info.style.color = inView.length ? '' : '#c62828';
-  info.textContent = !inView.length ? '· 지금 화면에는 포인트가 없음 → [전체 보기]를 누르세요' : shown.length === inView.length ? `· ${shown.length}개 표시 중` : `· 화면 ${inView.length.toLocaleString()}개 중 ${shown.length}개 표시 (겹치는 이름은 확대하면 보임)`;
+  info.textContent = !inView.length ? '· 지금 화면에는 포인트가 없음 → [선택한 것 보기]를 누르세요' : shown.length === inView.length ? `· ${shown.length}개 표시 중` : `· 화면 ${inView.length.toLocaleString()}개 중 ${shown.length}개 표시 (겹치는 이름은 확대하면 보임)`;
   shown.forEach(i => {
     const w = DATA.wps[i];
     L.marker([w[3], w[4]], {interactive: false, icon: L.divIcon({className: '', html: `<span class="rlabel" style="font-weight:normal">${esc(w[1])}</span>`, iconAnchor: [-7, 8]})}).addTo(lblLayer);
@@ -927,6 +928,10 @@ document.getElementById('trAll').onchange = e => {
   if (v && DATA.trails.some(t => t[2].length >= BIG)) toast('큰 항적(약 2만 점)도 선택됨 · 어탐기가 다시 느려질 수 있음');
 };
 document.getElementById('trSmall').onclick = () => setTrails(t => t[2].length < BIG);
+document.getElementById('trFit').onclick = () => {
+  const pts = DATA.trails.flatMap((t, i) => sendTrail(i) ? t[2] : []);
+  if (pts.length) map.fitBounds(L.latLngBounds(pts), {padding: [40, 40], maxZoom: 15}); else toast('체크한 항적이 없습니다');
+};
 function convTrail(i) {
   const [name, when, pts] = DATA.trails[i], tol = Math.max(5, +document.getElementById('tol').value || 100);
   let s = simplify(pts, tol), t = tol;
@@ -2078,7 +2083,10 @@ new ResizeObserver(() => {
   map.invalidateSize();
   if (needRefit && map.getSize().x >= 50 && map.getSize().y >= 50) { needRefit = false; fitAll(); }
 }).observe(map.getContainer());
-document.getElementById('btnFit').onclick = fitAll;
+document.getElementById('btnFit').onclick = () => {
+  const pts = DATA.wps.flatMap((w, i) => visibleWp(i) ? [[w[3], w[4]]] : []);
+  if (pts.length) map.fitBounds(L.latLngBounds(pts), {padding: [20, 20], maxZoom: 15}); else toast('체크한 웨이포인트가 없습니다');
+};
 </script>
 </body>
 </html>
