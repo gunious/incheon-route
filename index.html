@@ -181,6 +181,10 @@
         <button class="x" id="catchGpx" title="어탐기에 웨이포인트로 넣을 수 있는 GPX">어탐기용 GPX</button>
         <button class="x" id="catchImp" title="다른 기기에서 저장한 조과 CSV 합치기">불러오기</button><input type="file" id="catchFile" accept=".csv" hidden>
       </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center" id="catchDayBox">
+        <select id="catchDay" style="font:inherit;padding:2px" title="지울 날짜"></select>
+        <button class="x dan" id="catchDayDel" title="고른 날짜의 조과 기록을 모두 지움 (두 번 눌러야 지워짐)">이 날 지우기</button>
+      </div>
       <div class="stat" id="catchSum" style="margin-top:4px"></div>
       <div id="catchList" style="max-height:240px;overflow:auto"></div>
     </div>
@@ -954,18 +958,19 @@ function convTrail(i) {
 }
 
 // ---------- 항로 ----------
-const RCOL = ['#00e676', '#40c4ff', '#e040fb', '#ffff00', '#ff5252', '#64ffda'];
+// 이름에 Track 이 든 항로 = 내 보트가 주로 다닌 길 → 검정 (위성지도에서 보이게 흰 테두리), 나머지는 파랑
+const isTrackRt = r => /track/i.test(r.name);
 function renderRoutes() {
   routeLayer.clearLayers();
   const box = document.getElementById('routes');
   box.innerHTML = S.routes.length ? '' : '<div class="stat">아직 항로가 없습니다. [+ 새 항로 그리기]를 누르고 웨이포인트 두 개를 클릭하세요.</div>';
   const q = document.getElementById('rtQ').value.trim().toLowerCase();
   S.routes.forEach((r, i) => {
-    const ll = r.pts.map(p => [p.lat, p.lon]), col = RCOL[i % RCOL.length];
+    const ll = r.pts.map(p => [p.lat, p.lon]), tk = isTrackRt(r), col = tk ? '#000' : '#2979ff', edge = tk ? '#fff' : '#000';
     if (!r.hidden) {
-      L.polyline(ll, {color: '#000', weight: 6, opacity: .5}).addTo(routeLayer);
+      L.polyline(ll, {color: edge, weight: 6, opacity: tk ? .8 : .5}).addTo(routeLayer);
       L.polyline(ll, {color: col, weight: 3}).bindTooltip(r.name, {sticky: true}).addTo(routeLayer);
-      r.pts.forEach(p => L.circleMarker([p.lat, p.lon], {radius: 4, color: '#000', weight: 1, fillColor: col, fillOpacity: 1, interactive: false}).addTo(routeLayer));
+      r.pts.forEach(p => L.circleMarker([p.lat, p.lon], {radius: 4, color: edge, weight: 1, fillColor: col, fillOpacity: 1, interactive: false}).addTo(routeLayer));
     }
     if (q && !r.name.toLowerCase().includes(q)) return;
     const row = document.createElement('div'); row.className = 'row';
@@ -1805,8 +1810,35 @@ function catchRender() {
     r.onclick = () => { sideEl.classList.remove('open'); map.setView([c.lat, c.lon], Math.max(map.getZoom(), 14)); catchPopup(c.id); };
     box.appendChild(r);
   });
+  catchDayFill();
   if (typeof cntRender === 'function') cntRender();
 }
+// ---------- 조과 날짜별 지우기 (시험으로 누른 날·잘못 기록한 날) ----------
+const catchDaySel = document.getElementById('catchDay'), catchDayDel = document.getElementById('catchDayDel');
+const catchOfDay = v => v === 'all' ? catches : catches.filter(c => String(kstDay(c.t)) === v);
+function catchDayFill() {
+  const keep = catchDaySel.value, days = new Map();
+  catches.forEach(c => { const k = kstDay(c.t), o = days.get(k) || {t: c.t, k: 0, n: 0}; o.k++; o.n += c.n; days.set(k, o); });
+  const md = ms => { const d = new Date(ms); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`; };
+  catchDaySel.innerHTML = [...days].sort((a, b) => b[0] - a[0]).map(([k, o]) => `<option value="${k}">${md(o.t)} (${o.k}건 · ${o.n}마리)</option>`).join('')
+    + (catches.length ? `<option value="all">전체 (${catches.length}건 · ${catches.reduce((s, c) => s + c.n, 0)}마리)</option>` : '');
+  if ([...catchDaySel.options].some(o => o.value === keep)) catchDaySel.value = keep;
+  document.getElementById('catchDayBox').style.display = catches.length ? 'flex' : 'none';
+  catchDayDel.dataset.arm = ''; catchDayDel.textContent = '이 날 지우기';
+}
+catchDaySel.onchange = () => { catchDayDel.dataset.arm = ''; catchDayDel.textContent = '이 날 지우기'; };
+catchDayDel.onclick = () => {
+  const v = catchDaySel.value, del = catchOfDay(v); if (!del.length) return;
+  const what = v === 'all' ? '전체' : catchDaySel.selectedOptions[0].textContent.split(' (')[0];
+  if (catchDayDel.dataset.arm !== '1') {
+    catchDayDel.dataset.arm = '1'; catchDayDel.textContent = `한 번 더 누르면 ${what} ${del.length}건 삭제`;
+    toast('지운 기록은 되살릴 수 없습니다. 필요하면 먼저 [CSV로 저장] 하세요');
+    setTimeout(() => { catchDayDel.dataset.arm = ''; catchDayDel.textContent = '이 날 지우기'; }, 4000); return;
+  }
+  const ids = new Set(del.map(c => c.id)), n = del.reduce((s, c) => s + c.n, 0);
+  catches = catches.filter(c => !ids.has(c.id)); cntUndoStack = cntUndoStack.filter(id => !ids.has(id));
+  catchStore(); catchRender(); map.closePopup(); toast(`조과 ${what} ${ids.size}건 (${n}마리) 지웠습니다`);
+};
 catchSpF.onchange = catchRender;
 document.getElementById('catchShow').onchange = e => e.target.checked ? catchLayer.addTo(map) : map.removeLayer(catchLayer);
 kvGet('catches').then(v => { if (Array.isArray(v)) catches = v; catchRender(); }).catch(() => catchRender());
