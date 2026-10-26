@@ -179,7 +179,7 @@
         <select id="catchSpF" style="font:inherit;padding:2px"><option value="">전체 어종</option></select>
         <button class="x pri" id="catchCsv">CSV로 저장</button>
         <button class="x" id="catchGpx" title="어탐기에 웨이포인트로 넣을 수 있는 GPX">어탐기용 GPX</button>
-        <button class="x" id="catchImp" title="다른 기기에서 저장한 조과 CSV 합치기">불러오기</button><input type="file" id="catchFile" accept=".csv" hidden>
+        <button class="x" id="catchImp" title="다른 기기에서 저장한 조과 CSV 합치기">불러오기</button><input type="file" id="catchFile" accept=".csv,text/csv,text/comma-separated-values,application/vnd.ms-excel,application/octet-stream,text/plain" hidden>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center" id="catchDayBox">
         <select id="catchDay" style="font:inherit;padding:2px" title="지울 날짜"></select>
@@ -1188,10 +1188,13 @@ function stampName() {
   const d = new Date(), p = n => String(n).padStart(2, '0');
   return `어탐기용_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.gpx`;
 }
-function downloadGpx(g, name) {
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([g], {type: 'application/gpx+xml'})); a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+// 파일로 내려받기. 핸드폰 브라우저는 text/csv·gpx를 화면에 글로 띄워 버려서 octet-stream으로 줘야 파일로 저장됨
+function downloadFile(text, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], {type: 'application/octet-stream'})); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
+const downloadGpx = downloadFile;
 showSaveDir();
 
 document.getElementById('btnExport').onclick = () => saveGpxFile(buildGpx(), stampName());
@@ -1999,17 +2002,13 @@ window.addEventListener('online', () => { if (offFallback) { offFallback = false
 
 // CSV 저장 / 불러오기 (핸드폰 ↔ PC 옮기기, 엑셀로 보기)
 const CSV_HEAD = ['날짜', '시각', '어종', '마릿수', '위도', '경도', '그때수심(m)', '평균수심(m)', '물높이(m)', '물때이름', '물때', '메모', 'id'];
-function downloadText(text, name, type) {
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], {type})); a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-}
 const ymdDash = ms => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 document.getElementById('catchCsv').onclick = () => {
   if (!catches.length) { toast('저장할 조과 기록이 없습니다'); return; }
   const q = v => v == null ? '' : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
   const rows = catches.map(c => [ymdDash(c.t), hm(c.t), c.sp, c.n, c.lat, c.lon, c.d != null && c.th != null ? (c.d + c.th).toFixed(1) : '', c.d ?? '', c.th ?? '', catchMt(c), c.ph, c.memo, c.id].map(q).join(','));
   const name = `조과기록_${ymdDash(Date.now()).replace(/-/g, '')}.csv`;
-  downloadText('﻿' + [CSV_HEAD.join(','), ...rows].join('\r\n'), name, 'text/csv'); toast(`${name} 저장됨 (다운로드 폴더)`);
+  downloadFile('﻿' + [CSV_HEAD.join(','), ...rows].join('\r\n'), name); toast(`${name} 저장됨 (다운로드 폴더)`);
 };
 document.getElementById('catchGpx').onclick = () => {
   if (!catches.length) { toast('저장할 조과 기록이 없습니다'); return; }
@@ -2038,10 +2037,11 @@ document.getElementById('catchFile').onchange = async e => {
   const rows = parseCsv((await file.text()).replace(/^﻿/, '')), head = rows.shift() || [], col = k => head.indexOf(k);
   if (col('어종') < 0 || col('위도') < 0) { toast('조과기록 CSV가 아닙니다'); return; }
   const have = new Set(catches.map(c => c.id)), num = v => v === '' || v == null ? null : +v;
-  let add = 0, dup = 0;
+  let add = 0, dup = 0; const pts = [];
   for (const r of rows) {
     const t = new Date(`${r[col('날짜')]}T${r[col('시각')]}`).getTime(), lat = +r[col('위도')], lon = +r[col('경도')];
     if (isNaN(t) || isNaN(lat) || isNaN(lon)) continue;
+    pts.push([lat, lon]);
     const sp = r[col('어종')], rid = col('id') >= 0 && r[col('id')];
     // id가 있으면 id로만, 없으면(손으로 만든 CSV) 시각(분)·위치·어종이 모두 같을 때 같은 기록으로 봄
     const same = rid ? have.has(rid) : catches.some(c => Math.floor(c.t / 6e4) === Math.floor(t / 6e4) && c.sp === sp && Math.abs(c.lat - lat) < 1e-5 && Math.abs(c.lon - lon) < 1e-5);
@@ -2050,7 +2050,11 @@ document.getElementById('catchFile').onchange = async e => {
     catches.push({id, t, lat, lon, sp, n: +r[col('마릿수')] || 1, memo: r[col('메모')] || '', d: num(r[col('평균수심(m)')]), th: num(r[col('물높이(m)')]), ph: r[col('물때')] || '', mt: r[col('물때이름')] || mulName(t, lon).name});
     have.add(id); add++;
   }
-  catches.sort((x, y) => x.t - y.t); catchStore(); catchRender();
+  catches.sort((x, y) => x.t - y.t); catchStore();
+  // 불러온 기록이 보이게: 지도에 보기 켜고 어종 거름 풀고, 그 자리로 이동 (이미 있던 기록이어도)
+  const show = document.getElementById('catchShow'); if (!show.checked) { show.checked = true; catchLayer.addTo(map); }
+  catchSpF.value = ''; catchRender();
+  if (pts.length) { map.fitBounds(L.latLngBounds(pts).pad(0.3), {maxZoom: 16}); document.getElementById('empty').style.display = 'none'; } // 어탐기 파일 안 열었어도 조과 자리가 가려지지 않게
   toast(`조과 ${add}건 추가${dup ? ` (이미 있는 ${dup}건 건너뜀)` : ''}`);
 };
 
