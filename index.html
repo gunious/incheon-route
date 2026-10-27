@@ -1717,7 +1717,7 @@ document.getElementById('gotoOff').onclick = clearGoto;
 updateGoto();
 
 // ---------- 조과 기록: 🎣 → 어종·마릿수 → 위치·시각·물때·수심 자동 저장 (이 기기 브라우저 'catches') ----------
-const SP_DEFAULT = ['우럭', '광어', '노래미', '농어', '주꾸미', '갑오징어', '참돔', '도다리', '가자미', '대구', '열기', '문어'];
+const SP_DEFAULT = ['우럭', '광어', '노래미', '농어', '주꾸미', '갑오징어', '참돔', '방어', '부시리', '삼치', '붉바리', '도다리', '가자미', '대구', '열기', '문어'];
 let catches = [], cdPos = null, cdSp = '';
 const catchLayer = L.layerGroup().addTo(map), catchDlg = document.getElementById('catchDlg'), cdN = document.getElementById('cdN'), cdTime = document.getElementById('cdTime'), catchSpF = document.getElementById('catchSpF');
 const fmtT = (ms, yr) => { const d = new Date(ms); return `${yr ? d.getFullYear() + '/' : ''}${d.getMonth() + 1}/${d.getDate()} ${hm(ms)}`; };
@@ -1732,7 +1732,7 @@ function tidePhase(ms) { // '간조 후 2시간 (들물)' — 낚시꾼이 말�
 function catchStore() { kvSet('catches', catches).catch(() => toast('조과 저장 실패 (브라우저 저장공간 확인)')); }
 function spList() { // 많이 잡은 어종 먼저 + 기본 목록
   const cnt = {}; catches.forEach(c => cnt[c.sp] = (cnt[c.sp] || 0) + c.n);
-  return [...new Set([...Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]), ...SP_DEFAULT])].slice(0, 16);
+  return [...new Set([...Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]), ...SP_DEFAULT])].slice(0, 20);
 }
 function cdAuto() {
   const t = Date.parse(cdTime.value) || Date.now(), [la, lo] = cdPos.ll, d = depthAt(la, lo), h = tideAt(t);
