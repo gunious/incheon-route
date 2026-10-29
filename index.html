@@ -1717,7 +1717,7 @@ document.getElementById('gotoOff').onclick = clearGoto;
 updateGoto();
 
 // ---------- 조과 기록: 🎣 → 어종·마릿수 → 위치·시각·물때·수심 자동 저장 (이 기기 브라우저 'catches') ----------
-const SP_DEFAULT = ['우럭', '광어', '노래미', '농어', '주꾸미', '갑오징어', '참돔', '방어', '부시리', '삼치', '붉바리', '도다리', '가자미', '대구', '열기', '문어'];
+const SP_DEFAULT = ['우럭', '광어', '노래미', '농어', '주꾸미', '갑오징어', '참돔', '방어', '부시리', '삼치', '붉바리', '도다리', '가자미', '참가자미', '대구', '열기', '문어'];
 let catches = [], cdPos = null, cdSp = '';
 const catchLayer = L.layerGroup().addTo(map), catchDlg = document.getElementById('catchDlg'), cdN = document.getElementById('cdN'), cdTime = document.getElementById('cdTime'), catchSpF = document.getElementById('catchSpF');
 const fmtT = (ms, yr) => { const d = new Date(ms); return `${yr ? d.getFullYear() + '/' : ''}${d.getMonth() + 1}/${d.getDate()} ${hm(ms)}`; };
